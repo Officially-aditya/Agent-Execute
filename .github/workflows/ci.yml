@@ -15,5 +15,5 @@ jobs:
       - run: npm run typecheck
       - run: node --check apps/web/public/app.js
       - run: npm test
-      - run: docker compose config
+      - run: cp .env.example .env && docker compose config
       - run: docker build -t agent-execute-ci .
