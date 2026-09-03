@@ -9,6 +9,10 @@ neonConfig.webSocketConstructor = WebSocket;
 
 const encoder = new TextEncoder();
 
+export const config = {
+  maxDuration: 60,
+};
+
 function errorPayload(error: unknown) {
   return error instanceof DomainError
     ? error.toJSON()
@@ -57,74 +61,99 @@ async function parseInput(request: Request, path: string, repo: NeonMerchantRepo
 }
 
 /**
- * Native Vercel Web Handler for live agent output.
+ * Native Vercel Web Standard handler for live agent output.
  *
- * Vercel invokes the default-exported function directly. Returning a Response
- * backed by a Web ReadableStream lets each model/tool record reach the browser
- * as it is produced instead of passing through Express response buffering.
+ * Vercel's Functions API supports a default export containing fetch(Request).
+ * Returning a Response backed by a Web ReadableStream lets each model/tool
+ * record reach the browser as it is produced, without the Express bridge.
  */
-export default async function handler(request: Request): Promise<Response> {
-  if (request.method !== 'POST') {
-    return Response.json({ error: 'method_not_allowed' }, { status: 405 });
-  }
+export default {
+  async fetch(request: Request): Promise<Response> {
+    let repo: NeonMerchantRepository | null = null;
 
-  const url = new URL(request.url);
-  const path = url.searchParams.get('__path') || '';
-  const repo = new NeonMerchantRepository();
+    try {
+      if (request.method !== 'POST') {
+        return Response.json({ error: 'method_not_allowed' }, { status: 405 });
+      }
 
-  let parsed: Awaited<ReturnType<typeof parseInput>>;
-  try {
-    parsed = await parseInput(request, path, repo);
-  } catch (error) {
-    await repo.close().catch(() => {});
-    return Response.json(errorPayload(error), { status: 500 });
-  }
+      const url = new URL(request.url);
+      const path = url.searchParams.get('__path') || '';
 
-  if ('error' in parsed) {
-    await repo.close().catch(() => {});
-    return Response.json(parsed.error, { status: parsed.status });
-  }
+      repo = new NeonMerchantRepository();
+      const parsed = await parseInput(request, path, repo);
 
-  let cancelled = false;
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      // Commit the response immediately. This also gives the browser a record
-      // before objective extraction / the first provider token completes.
-      controller.enqueue(record({ type: 'ready' }));
+      if ('error' in parsed) {
+        await repo.close().catch(() => {});
+        repo = null;
+        return Response.json(parsed.error, { status: parsed.status });
+      }
 
-      const execute = async () => {
-        try {
-          const result = await runWithMerchantMcpRepo(repo, () => runAgent({
-            ...parsed.input,
-            onEvent: async (event) => {
-              if (!cancelled) controller.enqueue(record({ type: 'event', event }));
-            },
-          }));
-          if (!cancelled) controller.enqueue(record({ type: 'result', result }));
-        } catch (error) {
-          console.error('Agent Execute native stream failed:', error);
-          if (!cancelled) controller.enqueue(record({ type: 'error', error: errorPayload(error) }));
-        } finally {
-          await repo.close().catch((error) => console.error('Failed to close Neon pool:', error));
-          if (!cancelled) controller.close();
-        }
+      const activeRepo = repo;
+      let cancelled = false;
+      let closed = false;
+
+      const closeRepo = async () => {
+        if (closed) return;
+        closed = true;
+        await activeRepo.close().catch((error) => {
+          console.error('Failed to close Neon pool:', error);
+        });
       };
 
-      void execute();
-    },
-    async cancel() {
-      cancelled = true;
-      await repo.close().catch(() => {});
-    },
-  });
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          // Commit headers/body immediately so the browser can render the
+          // working state before objective extraction or provider tokens land.
+          controller.enqueue(record({ type: 'ready' }));
 
-  return new Response(stream, {
-    status: 200,
-    headers: {
-      'content-type': 'application/x-ndjson; charset=utf-8',
-      'cache-control': 'no-cache, no-transform',
-      'content-encoding': 'identity',
-      'x-accel-buffering': 'no',
-    },
-  });
-}
+          const execute = async () => {
+            try {
+              const result = await runWithMerchantMcpRepo(activeRepo, () => runAgent({
+                ...parsed.input,
+                onEvent: async (event) => {
+                  if (!cancelled) controller.enqueue(record({ type: 'event', event }));
+                },
+              }));
+
+              if (!cancelled) controller.enqueue(record({ type: 'result', result }));
+            } catch (error) {
+              console.error('Agent Execute native stream failed:', error);
+              if (!cancelled) controller.enqueue(record({ type: 'error', error: errorPayload(error) }));
+            } finally {
+              await closeRepo();
+              if (!cancelled) controller.close();
+            }
+          };
+
+          void execute();
+        },
+        async cancel() {
+          cancelled = true;
+          await closeRepo();
+        },
+      });
+
+      // The stream now owns the repository lifecycle.
+      repo = null;
+
+      return new Response(stream, {
+        status: 200,
+        headers: {
+          'content-type': 'application/x-ndjson; charset=utf-8',
+          'cache-control': 'no-cache, no-store, no-transform',
+          'x-accel-buffering': 'no',
+        },
+      });
+    } catch (error) {
+      console.error('Agent Execute stream startup failed:', error);
+      if (repo) await repo.close().catch(() => {});
+      return Response.json(
+        {
+          error: 'agent_stream_startup_failed',
+          message: error instanceof Error ? error.message : String(error),
+        },
+        { status: 500 },
+      );
+    }
+  },
+};
