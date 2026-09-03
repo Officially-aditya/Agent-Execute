@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { randomUUID } from 'node:crypto';
 import { connectMerchantMcp, mcpText } from './mcp.js';
+import { streamedAssistantCompletion } from './streamed-completion.js';
 import { nowIso, type AgentEvent, type AgentObjective, type AgentTaskState } from '../../../packages/shared/src/index.js';
 
 type MaybePromise<T> = T | Promise<T>;
@@ -104,79 +105,6 @@ function updateStateFromTool(state: AgentTaskState, tool: string, result: any) {
     state.phase = 'PAYMENT_READY';
   }
   state.updatedAt = nowIso();
-}
-
-type StreamedAssistant = {
-  role: 'assistant';
-  content: string | null;
-  tool_calls?: Array<{
-    id: string;
-    type: 'function';
-    function: { name: string; arguments: string };
-  }>;
-};
-
-async function streamedAssistantCompletion(
-  openai: OpenAI,
-  request: Record<string, unknown>,
-  onDelta: (delta: string) => Promise<void>,
-): Promise<StreamedAssistant> {
-  let sawChunk = false;
-  try {
-    const stream: any = await openai.chat.completions.create({ ...request, stream: true } as any);
-    let content = '';
-    const toolCalls = new Map<number, { id: string; type: 'function'; function: { name: string; arguments: string } }>();
-
-    for await (const chunk of stream) {
-      sawChunk = true;
-      const delta = chunk?.choices?.[0]?.delta;
-      if (!delta) continue;
-
-      if (typeof delta.content === 'string' && delta.content.length) {
-        content += delta.content;
-        await onDelta(delta.content);
-      }
-
-      for (const toolDelta of delta.tool_calls || []) {
-        const index = Number.isInteger(toolDelta.index) ? toolDelta.index : toolCalls.size;
-        const current = toolCalls.get(index) || {
-          id: '',
-          type: 'function' as const,
-          function: { name: '', arguments: '' },
-        };
-        if (typeof toolDelta.id === 'string' && toolDelta.id) current.id = toolDelta.id;
-        if (typeof toolDelta.function?.name === 'string') current.function.name += toolDelta.function.name;
-        if (typeof toolDelta.function?.arguments === 'string') current.function.arguments += toolDelta.function.arguments;
-        toolCalls.set(index, current);
-      }
-    }
-
-    const calls = [...toolCalls.entries()]
-      .sort(([a], [b]) => a - b)
-      .map(([index, call]) => ({
-        ...call,
-        id: call.id || `call_${index}_${randomUUID()}`,
-      }));
-
-    if (!content && !calls.length) {
-      throw new Error('LLM stream completed without text or tool calls. Check the configured Gemini model and OpenAI-compatible streaming support.');
-    }
-
-    return {
-      role: 'assistant',
-      content: content || null,
-      ...(calls.length ? { tool_calls: calls } : {}),
-    };
-  } catch (error) {
-    if (sawChunk) throw error;
-    const completion: any = await openai.chat.completions.create(request as any);
-    const assistant = completion.choices?.[0]?.message;
-    if (!assistant) throw new Error('LLM returned no message');
-    if (!assistant.content && !(assistant.tool_calls?.length)) {
-      throw new Error('LLM returned an empty assistant response. Check the configured Gemini model and provider compatibility.');
-    }
-    return assistant as StreamedAssistant;
-  }
 }
 
 export async function runAgent(input: {
