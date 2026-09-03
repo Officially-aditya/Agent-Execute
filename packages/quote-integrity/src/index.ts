@@ -1,4 +1,4 @@
-import { createHash, generateKeyPairSync, randomUUID, sign, verify } from 'node:crypto';
+import { createHash, createPublicKey, generateKeyPairSync, randomUUID, sign, verify } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type { Approval, CartSnapshot, ExecutionGrant, Quote } from '@vac/shared';
@@ -28,7 +28,6 @@ export function digestCart(snapshot: CartSnapshot): string {
 }
 
 export type MerchantKeys = { privateKey: string; publicKey: string };
-
 const privatePath = () => resolve(process.cwd(), '.data/merchant-private.pem');
 const publicPath = () => resolve(process.cwd(), '.data/merchant-public.pem');
 
@@ -36,12 +35,35 @@ export function loadOrCreateMerchantKeys(): MerchantKeys {
   const envPrivate = process.env.MERCHANT_SIGNING_PRIVATE_KEY?.replace(/\\n/g, '\n');
   const envPublic = process.env.MERCHANT_SIGNING_PUBLIC_KEY?.replace(/\\n/g, '\n');
   if (envPrivate && envPublic) return { privateKey: envPrivate, publicKey: envPublic };
-  if (existsSync(privatePath()) && existsSync(publicPath())) return { privateKey: readFileSync(privatePath(), 'utf8'), publicKey: readFileSync(publicPath(), 'utf8') };
+
+  const derivePublic = (privateKey: string) => createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }).toString();
+  const readWinner = (): MerchantKeys => {
+    const privateKey = readFileSync(privatePath(), 'utf8');
+    const publicKey = derivePublic(privateKey);
+    if (!existsSync(publicPath()) || readFileSync(publicPath(), 'utf8') !== publicKey) {
+      writeFileSync(publicPath(), publicKey, { mode: 0o644 });
+    }
+    return { privateKey, publicKey };
+  };
+
   mkdirSync(dirname(privatePath()), { recursive: true });
-  const pair = generateKeyPairSync('ed25519', { privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
-  writeFileSync(privatePath(), pair.privateKey, { mode: 0o600 });
-  writeFileSync(publicPath(), pair.publicKey, { mode: 0o644 });
-  return { privateKey: pair.privateKey, publicKey: pair.publicKey };
+  if (existsSync(privatePath())) return readWinner();
+
+  const pair = generateKeyPairSync('ed25519', {
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+  });
+
+  try {
+    // Only one process may create the authority-bearing private key. Losers
+    // discard their generated pair and derive the public key from the winner.
+    writeFileSync(privatePath(), pair.privateKey, { mode: 0o600, flag: 'wx' });
+    writeFileSync(publicPath(), pair.publicKey, { mode: 0o644 });
+    return { privateKey: pair.privateKey, publicKey: pair.publicKey };
+  } catch (error: any) {
+    if (error?.code !== 'EEXIST') throw error;
+    return readWinner();
+  }
 }
 
 function signingPayload(quote: Pick<Quote, 'quoteId'|'merchantId'|'cartDigest'|'amount'|'currency'|'validUntil'|'nonce'>): string {
