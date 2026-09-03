@@ -1,7 +1,8 @@
+import { readFile } from 'node:fs/promises';
 import { build } from 'esbuild';
 
 const result = await build({
-  entryPoints: ['api/server.ts'],
+  entryPoints: ['api/server.ts', 'api/agent-stream.ts'],
   bundle: true,
   platform: 'node',
   format: 'esm',
@@ -23,6 +24,7 @@ if (unresolvedWorkspaceImports.length) {
 const inputs = Object.keys(result.metafile.inputs).map((path) => path.replaceAll('\\', '/'));
 const requiredInputs = [
   'api/server.ts',
+  'api/agent-stream.ts',
   'packages/merchant-core/src/neon.ts',
   'packages/shared/src/index.ts',
   'apps/agent-service/src/app.ts',
@@ -56,4 +58,15 @@ if (outputText.includes("from '@vac/") || outputText.includes('from "@vac/')) {
   throw new Error('Vercel API output still contains an @vac/* runtime import.');
 }
 
-console.log(`Vercel API graph verified: ${inputs.length} internal source modules bundled, ${externalImports.length} npm/runtime imports externalized, 0 @vac/* runtime imports.`);
+const streamSource = await readFile('api/agent-stream.ts', 'utf8');
+if (!/export\s+default\s+async\s+function\s+handler\s*\(/.test(streamSource)) {
+  throw new Error('api/agent-stream.ts must default-export a Vercel handler function.');
+}
+if (/export\s+default\s*\{\s*\n?\s*async\s+fetch\s*\(/.test(streamSource)) {
+  throw new Error('api/agent-stream.ts must not use a Cloudflare-style default { fetch() } export.');
+}
+if (!streamSource.includes('new ReadableStream<Uint8Array>')) {
+  throw new Error('api/agent-stream.ts is not returning a native Web ReadableStream.');
+}
+
+console.log(`Vercel API graph verified: ${inputs.length} internal source modules bundled across server + native stream handlers, ${externalImports.length} npm/runtime imports externalized, 0 @vac/* runtime imports.`);
