@@ -63,10 +63,19 @@ const streamSource = await readFile('api/agent-stream.ts', 'utf8');
 if (!/export\s+default\s*\{[\s\S]*?async\s+fetch\s*\(request:\s*Request\)/.test(streamSource)) {
   throw new Error('api/agent-stream.ts must use Vercel\'s documented default { fetch(request: Request) } Web handler.');
 }
+if (/^\s*import\s/m.test(streamSource)) {
+  throw new Error('api/agent-stream.ts must not have top-level imports; runtime dependencies must load inside fetch() so import failures are catchable.');
+}
+if (!streamSource.includes("import('@neondatabase/serverless')") || !streamSource.includes("import('../apps/agent-service/src/agent.js')")) {
+  throw new Error('api/agent-stream.ts must load Neon and the agent graph lazily inside the Web handler.');
+}
 if (!streamSource.includes('new ReadableStream<Uint8Array>')) {
   throw new Error('api/agent-stream.ts is not returning a native Web ReadableStream.');
 }
-if (!streamSource.includes("controller.enqueue(record({ type: 'ready' }))")) {
+if (!streamSource.includes('async start(controller)')) {
+  throw new Error('api/agent-stream.ts must bind agent execution to the ReadableStream start() promise.');
+}
+if (!streamSource.includes("send({ type: 'ready' })")) {
   throw new Error('api/agent-stream.ts must commit an initial stream record immediately.');
 }
 if (!streamSource.includes("error: 'agent_stream_startup_failed'")) {
