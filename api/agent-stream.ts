@@ -1,9 +1,5 @@
 const encoder = new TextEncoder();
 
-export const config = {
-  maxDuration: 60,
-};
-
 type Repo = any;
 type RunAgent = (input: any) => Promise<any>;
 type RunWithRepo = <T>(repo: any, fn: () => T) => T;
