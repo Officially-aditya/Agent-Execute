@@ -1,9 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
-import { commitQuoteAsync } from '@vac/quote-integrity';
-import { ExecutionGuard } from '@vac/execution-guard';
-import { RazorpayAdapter } from '@vac/razorpay';
-import { DomainError } from '@vac/shared';
+import { commitQuoteAsync } from '../../../packages/quote-integrity/src/index.js';
+import { ExecutionGuard } from '../../../packages/execution-guard/src/index.js';
+import { RazorpayAdapter } from '../../../packages/razorpay/src/index.js';
+import { DomainError } from '../../../packages/shared/src/index.js';
 
 function result(value: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(value) }] };
