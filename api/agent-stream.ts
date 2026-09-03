@@ -41,9 +41,10 @@ async function parseInput(request: Request, path: string, repo: NeonMerchantRepo
   }
 
   const match = path.match(/^\/api\/sessions\/([^/]+)\/continue$/);
-  if (!match) return { error: { error: 'stream_route_not_found' }, status: 404 } as const;
+  const encodedSessionId = match?.[1];
+  if (!encodedSessionId) return { error: { error: 'stream_route_not_found' }, status: 404 } as const;
 
-  const sessionId = decodeURIComponent(match[1]);
+  const sessionId = decodeURIComponent(encodedSessionId);
   const session = await repo.getSession(sessionId);
   if (!session) return { error: { error: 'session_not_found' }, status: 404 } as const;
 
