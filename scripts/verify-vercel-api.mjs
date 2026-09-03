@@ -43,12 +43,7 @@ for (const required of requiredInputs) {
   }
 }
 
-const forbiddenInputs = [
-  'packages/merchant-core/src/db.ts',
-  'better-sqlite3',
-];
-
-for (const forbidden of forbiddenInputs) {
+for (const forbidden of ['packages/merchant-core/src/db.ts', 'better-sqlite3']) {
   if (inputs.some((input) => input.includes(forbidden))) {
     throw new Error(`Vercel API bundle unexpectedly includes local SQLite dependency: ${forbidden}`);
   }
@@ -60,26 +55,36 @@ if (outputText.includes("from '@vac/") || outputText.includes('from "@vac/')) {
 }
 
 const streamSource = await readFile('api/agent-stream.ts', 'utf8');
-if (!/export\s+default\s*\{[\s\S]*?async\s+fetch\s*\(request:\s*Request\)/.test(streamSource)) {
-  throw new Error('api/agent-stream.ts must use Vercel\'s documented default { fetch(request: Request) } Web handler.');
+if (!/export\s+default\s*\{[\s\S]*?fetch\s*\(request:\s*Request\):\s*Response/.test(streamSource)) {
+  throw new Error('api/agent-stream.ts must use Vercel\'s documented default { fetch(request: Request): Response } Web handler.');
 }
 if (/^\s*import\s/m.test(streamSource)) {
-  throw new Error('api/agent-stream.ts must not have top-level imports; runtime dependencies must load inside fetch() so import failures are catchable.');
+  throw new Error('api/agent-stream.ts must not have top-level imports; runtime dependencies must load after the response stream opens.');
 }
 if (!streamSource.includes("import('@neondatabase/serverless')") || !streamSource.includes("import('../apps/agent-service/src/agent.js')")) {
-  throw new Error('api/agent-stream.ts must load Neon and the agent graph lazily inside the Web handler.');
+  throw new Error('api/agent-stream.ts must load Neon and the agent graph lazily.');
 }
 if (!streamSource.includes('new ReadableStream<Uint8Array>')) {
   throw new Error('api/agent-stream.ts is not returning a native Web ReadableStream.');
 }
 if (!streamSource.includes('async start(controller)')) {
-  throw new Error('api/agent-stream.ts must bind agent execution to the ReadableStream start() promise.');
+  throw new Error('api/agent-stream.ts must keep agent execution bound to the ReadableStream lifecycle.');
 }
-if (!streamSource.includes("send({ type: 'ready' })")) {
-  throw new Error('api/agent-stream.ts must commit an initial stream record immediately.');
+if (!streamSource.includes("send({ type: 'ready', phase: 'runtime_starting' })")) {
+  throw new Error('api/agent-stream.ts must emit runtime_starting before loading runtime dependencies.');
 }
-if (!streamSource.includes("error: 'agent_stream_startup_failed'")) {
-  throw new Error('api/agent-stream.ts must convert startup failures into a readable HTTP response.');
+const firstReady = streamSource.indexOf("send({ type: 'ready', phase: 'runtime_starting' })");
+const runtimeLoad = streamSource.indexOf('const runtime = await loadRuntime()');
+if (firstReady < 0 || runtimeLoad < 0 || firstReady > runtimeLoad) {
+  throw new Error('The first stream record must be emitted before Neon/MCP/Gemini runtime loading begins.');
 }
 
-console.log(`Vercel API graph verified: ${inputs.length} internal source modules bundled across server + native Web stream handlers, ${externalImports.length} npm/runtime imports externalized, 0 @vac/* runtime imports.`);
+const clientSource = await readFile('apps/web/public/chat-stream.js', 'utf8');
+if (!clientSource.includes('/api/agent-stream?__path=')) {
+  throw new Error('The browser must call the agent stream function directly instead of relying on a rewrite for live transport.');
+}
+if (!clientSource.includes("error: 'empty_agent_response'")) {
+  throw new Error('The browser must surface empty final agent responses instead of silently rendering nothing.');
+}
+
+console.log(`Vercel stream graph verified: ${inputs.length} internal source modules bundled, direct client transport enabled, 0 @vac/* runtime imports, 0 SQLite leakage.`);
