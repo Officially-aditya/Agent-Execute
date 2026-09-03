@@ -16,7 +16,7 @@ const SYSTEM = `You are a shopping agent operating a live merchant exclusively t
 Respect the trusted task state, especially required items, quantities, preferences, and maximum budget. All money is integer paise.
 Never claim a product exists without searching the merchant. Never fabricate IDs.
 The payment amount is outside your authority: you cannot set, override, or infer an amount for Razorpay. execute_payment accepts only a trusted server-issued grant_id.
-After commit_quote succeeds, STOP and tell the user the committed total needs approval. Do not simulate or call approval.
+When a shopping cart satisfies the user's request, call commit_quote instead of stopping at an informal cart summary. After commit_quote succeeds, STOP and tell the user the committed total needs approval. Do not simulate or call approval.
 When trusted state contains an activeGrantId, you may call execute_payment with exactly that grant ID.
 If execute_payment returns QUOTE_CHANGED or STALE_CART, recover dynamically through MCP: inspect the live cart/catalog, choose a valid alternative only within the user's constraints, obtain a fresh quote, then STOP for fresh approval.
 If a quote or approval has expired, refresh authoritative cart state, obtain a fresh quote, then STOP for fresh user approval. Never reuse expired authorization.
@@ -25,6 +25,8 @@ If a payment-rail operation returns PAYMENT_FAILED with retry_allowed=true, retr
 If you receive INVALID_SIGNATURE, AMOUNT_MISMATCH, CURRENCY_MISMATCH, MERCHANT_MISMATCH, REPLAY_ATTEMPT, PAYMENT_VERIFICATION_FAILED, or another integrity/security failure, STOP and report it. Never attempt to bypass, weaken, or work around a security check.
 If recovery would exceed budget, remove a required item, change requested quantity, or materially change the requested product, ask the user instead.
 A payment-rail failure is different from a quote-integrity failure. Preserve that distinction in your response.
+Do not write user-facing prose in the same turn in which you invoke tools; when a tool is needed, emit the tool call only.
+For user-facing responses, use concise Markdown that is easy to scan. Prefer a short lead sentence, bullets for selected items, and a compact price summary. Use the authoritative merchant/cart/quote totals returned by tools instead of recomputing them yourself. If a non-zero discount affects the total, always show it explicitly. Keep commentary such as budget headroom on its own line instead of attaching it to the Total value.
 Do not expose private chain-of-thought. Briefly describe actions and outcomes only.`;
 
 function client() {
@@ -104,6 +106,75 @@ function updateStateFromTool(state: AgentTaskState, tool: string, result: any) {
   state.updatedAt = nowIso();
 }
 
+type StreamedAssistant = {
+  role: 'assistant';
+  content: string | null;
+  tool_calls?: Array<{
+    id: string;
+    type: 'function';
+    function: { name: string; arguments: string };
+  }>;
+};
+
+async function streamedAssistantCompletion(
+  openai: OpenAI,
+  request: Record<string, unknown>,
+  onDelta: (delta: string) => Promise<void>,
+): Promise<StreamedAssistant> {
+  let sawChunk = false;
+  try {
+    const stream: any = await openai.chat.completions.create({ ...request, stream: true } as any);
+    let content = '';
+    const toolCalls = new Map<number, { id: string; type: 'function'; function: { name: string; arguments: string } }>();
+
+    for await (const chunk of stream) {
+      sawChunk = true;
+      const delta = chunk?.choices?.[0]?.delta;
+      if (!delta) continue;
+
+      if (typeof delta.content === 'string' && delta.content.length) {
+        content += delta.content;
+        await onDelta(delta.content);
+      }
+
+      for (const toolDelta of delta.tool_calls || []) {
+        const index = Number.isInteger(toolDelta.index) ? toolDelta.index : toolCalls.size;
+        const current = toolCalls.get(index) || {
+          id: '',
+          type: 'function' as const,
+          function: { name: '', arguments: '' },
+        };
+        if (typeof toolDelta.id === 'string' && toolDelta.id) current.id = toolDelta.id;
+        if (typeof toolDelta.function?.name === 'string') current.function.name += toolDelta.function.name;
+        if (typeof toolDelta.function?.arguments === 'string') current.function.arguments += toolDelta.function.arguments;
+        toolCalls.set(index, current);
+      }
+    }
+
+    const calls = [...toolCalls.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([index, call]) => ({
+        ...call,
+        id: call.id || `call_${index}_${randomUUID()}`,
+      }));
+
+    return {
+      role: 'assistant',
+      content: content || null,
+      ...(calls.length ? { tool_calls: calls } : {}),
+    };
+  } catch (error) {
+    // Some OpenAI-compatible providers can reject streaming while still
+    // supporting ordinary chat completions. Fall back only if nothing was
+    // emitted yet, so a partially streamed response is never duplicated.
+    if (sawChunk) throw error;
+    const completion: any = await openai.chat.completions.create(request as any);
+    const assistant = completion.choices?.[0]?.message;
+    if (!assistant) throw new Error('LLM returned no message');
+    return assistant as StreamedAssistant;
+  }
+}
+
 export async function runAgent(input: {
   repo: AgentRepository;
   message?: string;
@@ -117,6 +188,9 @@ export async function runAgent(input: {
   const events: AgentEvent[] = [];
   const emit = async (event: AgentEvent) => {
     events.push(event);
+    if (input.onEvent) await input.onEvent(event);
+  };
+  const emitTransient = async (event: AgentEvent) => {
     if (input.onEvent) await input.onEvent(event);
   };
 
@@ -141,13 +215,23 @@ export async function runAgent(input: {
     await emit({ type: 'state', at: nowIso(), state: structuredClone(state) });
 
     for (let step = 0; step < 24; step++) {
-      const completion: any = await openai.chat.completions.create({
+      const request = {
         model: process.env.LLM_MODEL || 'gpt-5.5',
         messages,
         tools,
         tool_choice: 'auto',
-      } as any);
-      const assistant = completion.choices?.[0]?.message;
+      };
+
+      let assistant: any;
+      if (input.onEvent) {
+        assistant = await streamedAssistantCompletion(openai, request, async (delta) => {
+          await emitTransient({ type: 'model_delta', at: nowIso(), text: delta });
+        });
+      } else {
+        const completion: any = await openai.chat.completions.create(request as any);
+        assistant = completion.choices?.[0]?.message;
+      }
+
       if (!assistant) throw new Error('LLM returned no message');
       messages.push(assistant);
       const calls = assistant.tool_calls || [];
@@ -181,8 +265,9 @@ export async function runAgent(input: {
         messages.push({ role: 'tool', tool_call_id: call.id, content: text });
 
         if (toolName === 'commit_quote' && !parsed?.error) {
-          const textOut = `I have a fresh merchant-committed quote for ₹${(parsed.amount / 100).toFixed(2)}. Please approve that exact quote before payment execution.`;
+          const textOut = `Your cart is locked to a fresh merchant-signed quote.\n\n**Total:** ₹${(parsed.amount / 100).toFixed(2)}\n\nApprove this exact amount to continue to payment.`;
           messages.push({ role: 'assistant', content: textOut });
+          if (input.onEvent) await emitTransient({ type: 'model_delta', at: nowIso(), text: textOut });
           await emit({ type: 'model', at: nowIso(), text: textOut });
           state.updatedAt = nowIso();
           await input.repo.saveSession(state, messages);
