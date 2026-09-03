@@ -51,6 +51,13 @@
         <p class="fine">Approval binds to this quote, digest, amount and expiry. The agent cannot create this approval.</p>
       </section>
 
+      <section id="executionPanel" class="panel payment" hidden>
+        <small>TRUSTED EXECUTION</small>
+        <h2>Approved grant ready</h2>
+        <p>The exact quote is approved. You may now mutate merchant state in Judge Mode, then continue execution to test the guard.</p>
+        <button id="continueButton">Continue execution</button>
+      </section>
+
       <section id="paymentPanel" class="panel payment" hidden>
         <small>RAZORPAY TEST MODE</small>
         <h2>Verified order ready</h2>
