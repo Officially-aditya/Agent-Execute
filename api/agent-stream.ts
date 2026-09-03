@@ -29,7 +29,7 @@ async function parseInput(request: Request, path: string, repo: Repo) {
   if (path === '/api/agent/run') {
     const body: any = await request.json().catch(() => ({}));
     if (typeof body?.message !== 'string' || !body.message.trim()) {
-      return { error: { error: 'message_required' }, status: 400 } as const;
+      return { error: { error: 'message_required', message: 'A shopping request is required.' }, status: 400 } as const;
     }
     return {
       input: {
@@ -41,11 +41,11 @@ async function parseInput(request: Request, path: string, repo: Repo) {
   }
 
   const match = path.match(/^\/api\/sessions\/([^/]+)\/continue$/);
-  if (!match?.[1]) return { error: { error: 'stream_route_not_found' }, status: 404 } as const;
+  if (!match?.[1]) return { error: { error: 'stream_route_not_found', message: `Unsupported stream route: ${path || '(empty)'}` }, status: 404 } as const;
 
   const sessionId = decodeURIComponent(match[1]);
   const session = await repo.getSession(sessionId);
-  if (!session) return { error: { error: 'session_not_found' }, status: 404 } as const;
+  if (!session) return { error: { error: 'session_not_found', message: 'The checkout session no longer exists.' }, status: 404 } as const;
 
   return {
     input: {
@@ -61,10 +61,6 @@ async function loadRuntime(): Promise<{
   runAgent: RunAgent;
   runWithMerchantMcpRepo: RunWithRepo;
 }> {
-  // Keep the Vercel function module itself dependency-free. Vercel evaluates
-  // api/agent-stream.ts before invoking fetch(); a top-level failure in Neon,
-  // ws, MCP, or the agent graph would otherwise become FUNCTION_INVOCATION_FAILED
-  // and bypass every application error handler.
   const [neonPackage, wsPackage, merchantPackage, agentPackage, mcpPackage] = await Promise.all([
     import('@neondatabase/serverless'),
     import('ws'),
@@ -85,117 +81,96 @@ async function loadRuntime(): Promise<{
 
 /**
  * Vercel Web Standard Function.
- *
- * Contract: https://vercel.com/docs/functions/functions-api-reference
- * Vercel supports a default export containing fetch(Request). The returned
- * Response owns a native ReadableStream, so each NDJSON record can be flushed
- * independently without passing through Express.
+ * The Response is created immediately and all runtime/database work happens
+ * inside the ReadableStream after the first record has been emitted.
  */
 export default {
-  async fetch(request: Request): Promise<Response> {
-    let repo: Repo | null = null;
-
-    try {
-      if (request.method !== 'POST') {
-        return Response.json({ error: 'method_not_allowed' }, { status: 405 });
-      }
-
-      const url = new URL(request.url);
-      const path = url.searchParams.get('__path') || '';
-
-      const runtime = await loadRuntime();
-      repo = runtime.repo;
-
-      const parsed = await parseInput(request, path, repo);
-      if ('error' in parsed) {
-        await repo.close().catch(() => {});
-        repo = null;
-        return Response.json(parsed.error, { status: parsed.status });
-      }
-
-      const activeRepo = repo;
-      const { runAgent, runWithMerchantMcpRepo } = runtime;
-      let cancelled = false;
-      let closed = false;
-
-      const closeRepo = async () => {
-        if (closed) return;
-        closed = true;
-        await activeRepo.close().catch((error: unknown) => {
-          console.error('Failed to close Neon pool:', error);
-        });
-      };
-
-      const stream = new ReadableStream<Uint8Array>({
-        async start(controller) {
-          let streamOpen = true;
-
-          const send = (value: unknown) => {
-            if (!streamOpen || cancelled) return false;
-            try {
-              controller.enqueue(record(value));
-              return true;
-            } catch {
-              streamOpen = false;
-              cancelled = true;
-              return false;
-            }
-          };
-
-          const finish = () => {
-            if (!streamOpen || cancelled) return;
-            streamOpen = false;
-            try { controller.close(); } catch {}
-          };
-
-          // Commit the response body immediately. The browser receives this
-          // before objective extraction, MCP discovery, or provider tokens.
-          send({ type: 'ready' });
-
-          try {
-            const result = await runWithMerchantMcpRepo(activeRepo, () => runAgent({
-              ...parsed.input,
-              onEvent: async (event: unknown) => {
-                send({ type: 'event', event });
-              },
-            }));
-
-            send({ type: 'result', result });
-          } catch (error) {
-            console.error('Agent Execute native stream failed:', error);
-            send({ type: 'error', error: errorPayload(error) });
-          } finally {
-            await closeRepo();
-            finish();
-          }
-        },
-        async cancel() {
-          cancelled = true;
-          await closeRepo();
-        },
-      });
-
-      // The stream now owns the repository lifecycle.
-      repo = null;
-
-      return new Response(stream, {
-        status: 200,
-        headers: {
-          'content-type': 'application/x-ndjson; charset=utf-8',
-          'cache-control': 'no-cache, no-store, no-transform',
-          'x-content-type-options': 'nosniff',
-        },
-      });
-    } catch (error) {
-      console.error('Agent Execute stream startup failed:', error);
-      if (repo) await repo.close().catch(() => {});
-      return Response.json(
-        {
-          error: 'agent_stream_startup_failed',
-          message: error instanceof Error ? error.message : String(error),
-        },
-        { status: 500 },
-      );
+  fetch(request: Request): Response {
+    if (request.method !== 'POST') {
+      return Response.json({ error: 'method_not_allowed' }, { status: 405 });
     }
+
+    const path = new URL(request.url).searchParams.get('__path') || '';
+    let repo: Repo | null = null;
+    let closed = false;
+    let cancelled = false;
+
+    const closeRepo = async () => {
+      if (closed || !repo) return;
+      closed = true;
+      const active = repo;
+      repo = null;
+      await active.close().catch((error: unknown) => console.error('Failed to close Neon pool:', error));
+    };
+
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        let streamOpen = true;
+        const send = (value: unknown) => {
+          if (!streamOpen || cancelled) return false;
+          try {
+            controller.enqueue(record(value));
+            return true;
+          } catch {
+            streamOpen = false;
+            cancelled = true;
+            return false;
+          }
+        };
+        const finish = () => {
+          if (!streamOpen) return;
+          streamOpen = false;
+          try { controller.close(); } catch {}
+        };
+
+        // This is deliberately the first operation. It proves that Vercel has
+        // opened the response before imports, Neon, MCP, or the LLM can block.
+        send({ type: 'ready', phase: 'runtime_starting' });
+
+        try {
+          const runtime = await loadRuntime();
+          repo = runtime.repo;
+          send({ type: 'ready', phase: 'runtime_ready' });
+
+          const parsed = await parseInput(request, path, repo);
+          if ('error' in parsed) {
+            send({ type: 'error', error: parsed.error });
+            return;
+          }
+          send({ type: 'ready', phase: 'agent_starting' });
+
+          const result = await runtime.runWithMerchantMcpRepo(repo, () => runtime.runAgent({
+            ...parsed.input,
+            onEvent: async (event: unknown) => {
+              send({ type: 'event', event });
+            },
+          }));
+
+          if (!result || typeof result !== 'object') {
+            throw new Error('Agent completed without a result object.');
+          }
+          send({ type: 'result', result });
+        } catch (error) {
+          console.error('Agent Execute native stream failed:', error);
+          send({ type: 'error', error: errorPayload(error) });
+        } finally {
+          await closeRepo();
+          finish();
+        }
+      },
+      async cancel() {
+        cancelled = true;
+        await closeRepo();
+      },
+    });
+
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        'content-type': 'application/x-ndjson; charset=utf-8',
+        'cache-control': 'no-cache, no-store, no-transform',
+        'x-content-type-options': 'nosniff',
+      },
+    });
   },
 };
