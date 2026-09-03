@@ -60,14 +60,17 @@ if (outputText.includes("from '@vac/") || outputText.includes('from "@vac/')) {
 }
 
 const streamSource = await readFile('api/agent-stream.ts', 'utf8');
-if (!/export\s+default\s+async\s+function\s+handler\s*\(/.test(streamSource)) {
-  throw new Error('api/agent-stream.ts must default-export a Vercel handler function.');
-}
-if (/export\s+default\s*\{\s*\n?\s*async\s+fetch\s*\(/.test(streamSource)) {
-  throw new Error('api/agent-stream.ts must not use a Cloudflare-style default { fetch() } export.');
+if (!/export\s+default\s*\{[\s\S]*?async\s+fetch\s*\(request:\s*Request\)/.test(streamSource)) {
+  throw new Error('api/agent-stream.ts must use Vercel\'s documented default { fetch(request: Request) } Web handler.');
 }
 if (!streamSource.includes('new ReadableStream<Uint8Array>')) {
   throw new Error('api/agent-stream.ts is not returning a native Web ReadableStream.');
 }
+if (!streamSource.includes("controller.enqueue(record({ type: 'ready' }))")) {
+  throw new Error('api/agent-stream.ts must commit an initial stream record immediately.');
+}
+if (!streamSource.includes("error: 'agent_stream_startup_failed'")) {
+  throw new Error('api/agent-stream.ts must convert startup failures into a readable HTTP response.');
+}
 
-console.log(`Vercel API graph verified: ${inputs.length} internal source modules bundled across server + native stream handlers, ${externalImports.length} npm/runtime imports externalized, 0 @vac/* runtime imports.`);
+console.log(`Vercel API graph verified: ${inputs.length} internal source modules bundled across server + native Web stream handlers, ${externalImports.length} npm/runtime imports externalized, 0 @vac/* runtime imports.`);
