@@ -8,6 +8,7 @@ const result = await build({
   format: 'esm',
   target: 'node22',
   packages: 'external',
+  outdir: '.vercel-verify',
   write: false,
   metafile: true,
   logLevel: 'silent',
