@@ -10,6 +10,8 @@ type AgentRepository = {
   saveSession(state: AgentTaskState, messages: unknown[]): MaybePromise<unknown>;
 };
 
+type AgentEventSink = (event: AgentEvent) => void | Promise<void>;
+
 const SYSTEM = `You are a shopping agent operating a live merchant exclusively through the MCP tools you are given.
 Respect the trusted task state, especially required items, quantities, preferences, and maximum budget. All money is integer paise.
 Never claim a product exists without searching the merchant. Never fabricate IDs.
@@ -102,10 +104,22 @@ function updateStateFromTool(state: AgentTaskState, tool: string, result: any) {
   state.updatedAt = nowIso();
 }
 
-export async function runAgent(input: { repo: AgentRepository; message?: string; sessionId?: string; trustedInstruction?: string }) {
+export async function runAgent(input: {
+  repo: AgentRepository;
+  message?: string;
+  sessionId?: string;
+  trustedInstruction?: string;
+  onEvent?: AgentEventSink;
+}) {
   const openai = client();
   const mcpConnection = await connectMerchantMcp();
   const mcp = mcpConnection.client;
+  const events: AgentEvent[] = [];
+  const emit = async (event: AgentEvent) => {
+    events.push(event);
+    if (input.onEvent) await input.onEvent(event);
+  };
+
   try {
     const discovered = await mcp.listTools();
     const tools = discovered.tools.map((tool: any) => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.inputSchema } }));
@@ -124,7 +138,7 @@ export async function runAgent(input: { repo: AgentRepository; message?: string;
     messages.push({ role: 'system', content: trustedStateMessage(state) });
     if (input.trustedInstruction) messages.push({ role: 'system', content: `TRUSTED HOST EVENT: ${input.trustedInstruction}` });
     if (input.message?.trim()) messages.push({ role: 'user', content: input.message.trim() });
-    const events: AgentEvent[] = [{ type: 'state', at: nowIso(), state: structuredClone(state) }];
+    await emit({ type: 'state', at: nowIso(), state: structuredClone(state) });
 
     for (let step = 0; step < 24; step++) {
       const completion: any = await openai.chat.completions.create({
@@ -140,13 +154,13 @@ export async function runAgent(input: { repo: AgentRepository; message?: string;
 
       if (!calls.length) {
         const text = assistant.content || '';
-        if (text) events.push({ type: 'model', at: nowIso(), text });
+        if (text) await emit({ type: 'model', at: nowIso(), text });
         state.updatedAt = nowIso();
         await input.repo.saveSession(state, messages);
         return { session_id: state.sessionId, message: text, state, events };
       }
 
-      if (assistant.content) events.push({ type: 'model', at: nowIso(), text: assistant.content });
+      if (assistant.content) await emit({ type: 'model', at: nowIso(), text: assistant.content });
       for (const call of calls) {
         const toolName = call.function.name;
         let args: Record<string, unknown>;
@@ -155,20 +169,21 @@ export async function runAgent(input: { repo: AgentRepository; message?: string;
         } catch {
           throw new Error(`Model returned invalid JSON arguments for ${toolName}`);
         }
-        events.push({ type: 'tool_call', at: nowIso(), tool: toolName, arguments: args });
+
+        await emit({ type: 'tool_call', at: nowIso(), tool: toolName, arguments: args });
         const toolResult = await mcp.callTool({ name: toolName, arguments: args });
         const text = mcpText(toolResult);
         let parsed: any = text;
         try { parsed = JSON.parse(text); } catch {}
-        events.push({ type: 'tool_result', at: nowIso(), tool: toolName, result: parsed });
+        await emit({ type: 'tool_result', at: nowIso(), tool: toolName, result: parsed });
         updateStateFromTool(state, toolName, parsed);
-        events.push({ type: 'state', at: nowIso(), state: structuredClone(state) });
+        await emit({ type: 'state', at: nowIso(), state: structuredClone(state) });
         messages.push({ role: 'tool', tool_call_id: call.id, content: text });
 
         if (toolName === 'commit_quote' && !parsed?.error) {
           const textOut = `I have a fresh merchant-committed quote for ₹${(parsed.amount / 100).toFixed(2)}. Please approve that exact quote before payment execution.`;
           messages.push({ role: 'assistant', content: textOut });
-          events.push({ type: 'model', at: nowIso(), text: textOut });
+          await emit({ type: 'model', at: nowIso(), text: textOut });
           state.updatedAt = nowIso();
           await input.repo.saveSession(state, messages);
           return { session_id: state.sessionId, message: textOut, state, events };
