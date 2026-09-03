@@ -10,7 +10,8 @@
     "dev:mcp": "tsx apps/merchant-mcp/src/index.ts",
     "dev:admin": "tsx apps/merchant-admin/src/index.ts",
     "start": "tsx apps/agent-service/src/index.ts",
-    "vercel-build": "npm run typecheck && rm -rf public && cp -R apps/web/public public",
+    "vercel-build": "npm run typecheck && npm run check:vercel-api && rm -rf public && cp -R apps/web/public public",
+    "check:vercel-api": "node scripts/verify-vercel-api.mjs",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:security": "vitest run tests/security",
@@ -19,7 +20,7 @@
     "test:live:llm": "RUN_LIVE_LLM=1 vitest run tests/live/agent.live.test.ts",
     "test:live:razorpay": "RUN_LIVE_RAZORPAY=1 vitest run tests/live/razorpay-order.live.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "check": "npm run typecheck && npm test",
+    "check": "npm run typecheck && npm run check:vercel-api && npm test",
     "setup": "tsx packages/quote-integrity/src/setup-keys.ts"
   },
   "dependencies": {
@@ -38,6 +39,7 @@
     "@types/express": "^5.0.3",
     "@types/node": "^24.3.0",
     "concurrently": "^9.2.1",
+    "esbuild": "^0.25.9",
     "tsx": "^4.20.5",
     "typescript": "^6.0.0",
     "vitest": "^3.2.4"
