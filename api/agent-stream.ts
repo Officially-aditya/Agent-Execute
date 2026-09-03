@@ -1,26 +1,26 @@
-import { neonConfig } from '@neondatabase/serverless';
-import WebSocket from 'ws';
-import { NeonMerchantRepository } from '../packages/merchant-core/src/neon.js';
-import { runAgent } from '../apps/agent-service/src/agent.js';
-import { runWithMerchantMcpRepo } from '../apps/agent-service/src/mcp.js';
-import { DomainError } from '../packages/shared/src/index.js';
-
-neonConfig.webSocketConstructor = WebSocket;
-
 const encoder = new TextEncoder();
 
 export const config = {
   maxDuration: 60,
 };
 
-function errorPayload(error: unknown) {
-  return error instanceof DomainError
-    ? error.toJSON()
-    : { error: 'agent_error', message: error instanceof Error ? error.message : String(error) };
-}
+type Repo = any;
+type RunAgent = (input: any) => Promise<any>;
+type RunWithRepo = <T>(repo: any, fn: () => T) => T;
 
 function record(value: unknown) {
   return encoder.encode(`${JSON.stringify(value)}\n`);
+}
+
+function errorPayload(error: unknown) {
+  const maybeDomain = error as { toJSON?: () => unknown } | null;
+  if (maybeDomain && typeof maybeDomain.toJSON === 'function') {
+    try { return maybeDomain.toJSON(); } catch {}
+  }
+  return {
+    error: 'agent_error',
+    message: error instanceof Error ? error.message : String(error),
+  };
 }
 
 function continueInstruction(session: any) {
@@ -29,7 +29,7 @@ function continueInstruction(session: any) {
     : 'Continue the shopping task from the trusted persisted state.';
 }
 
-async function parseInput(request: Request, path: string, repo: NeonMerchantRepository) {
+async function parseInput(request: Request, path: string, repo: Repo) {
   if (path === '/api/agent/run') {
     const body: any = await request.json().catch(() => ({}));
     if (typeof body?.message !== 'string' || !body.message.trim()) {
@@ -60,16 +60,44 @@ async function parseInput(request: Request, path: string, repo: NeonMerchantRepo
   } as const;
 }
 
+async function loadRuntime(): Promise<{
+  repo: Repo;
+  runAgent: RunAgent;
+  runWithMerchantMcpRepo: RunWithRepo;
+}> {
+  // Keep the Vercel function module itself dependency-free. Vercel evaluates
+  // api/agent-stream.ts before invoking fetch(); a top-level failure in Neon,
+  // ws, MCP, or the agent graph would otherwise become FUNCTION_INVOCATION_FAILED
+  // and bypass every application error handler.
+  const [neonPackage, wsPackage, merchantPackage, agentPackage, mcpPackage] = await Promise.all([
+    import('@neondatabase/serverless'),
+    import('ws'),
+    import('../packages/merchant-core/src/neon.js'),
+    import('../apps/agent-service/src/agent.js'),
+    import('../apps/agent-service/src/mcp.js'),
+  ]);
+
+  const WebSocketCtor = (wsPackage as any).default || wsPackage;
+  neonPackage.neonConfig.webSocketConstructor = WebSocketCtor as any;
+
+  return {
+    repo: new merchantPackage.NeonMerchantRepository(),
+    runAgent: agentPackage.runAgent,
+    runWithMerchantMcpRepo: mcpPackage.runWithMerchantMcpRepo,
+  };
+}
+
 /**
- * Native Vercel Web Standard handler for live agent output.
+ * Vercel Web Standard Function.
  *
- * Vercel's Functions API supports a default export containing fetch(Request).
- * Returning a Response backed by a Web ReadableStream lets each model/tool
- * record reach the browser as it is produced, without the Express bridge.
+ * Contract: https://vercel.com/docs/functions/functions-api-reference
+ * Vercel supports a default export containing fetch(Request). The returned
+ * Response owns a native ReadableStream, so each NDJSON record can be flushed
+ * independently without passing through Express.
  */
 export default {
   async fetch(request: Request): Promise<Response> {
-    let repo: NeonMerchantRepository | null = null;
+    let repo: Repo | null = null;
 
     try {
       if (request.method !== 'POST') {
@@ -79,9 +107,10 @@ export default {
       const url = new URL(request.url);
       const path = url.searchParams.get('__path') || '';
 
-      repo = new NeonMerchantRepository();
-      const parsed = await parseInput(request, path, repo);
+      const runtime = await loadRuntime();
+      repo = runtime.repo;
 
+      const parsed = await parseInput(request, path, repo);
       if ('error' in parsed) {
         await repo.close().catch(() => {});
         repo = null;
@@ -89,43 +118,62 @@ export default {
       }
 
       const activeRepo = repo;
+      const { runAgent, runWithMerchantMcpRepo } = runtime;
       let cancelled = false;
       let closed = false;
 
       const closeRepo = async () => {
         if (closed) return;
         closed = true;
-        await activeRepo.close().catch((error) => {
+        await activeRepo.close().catch((error: unknown) => {
           console.error('Failed to close Neon pool:', error);
         });
       };
 
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
-          // Commit headers/body immediately so the browser can render the
-          // working state before objective extraction or provider tokens land.
-          controller.enqueue(record({ type: 'ready' }));
+          let streamOpen = true;
 
-          const execute = async () => {
+          const send = (value: unknown) => {
+            if (!streamOpen || cancelled) return false;
             try {
-              const result = await runWithMerchantMcpRepo(activeRepo, () => runAgent({
-                ...parsed.input,
-                onEvent: async (event) => {
-                  if (!cancelled) controller.enqueue(record({ type: 'event', event }));
-                },
-              }));
-
-              if (!cancelled) controller.enqueue(record({ type: 'result', result }));
-            } catch (error) {
-              console.error('Agent Execute native stream failed:', error);
-              if (!cancelled) controller.enqueue(record({ type: 'error', error: errorPayload(error) }));
-            } finally {
-              await closeRepo();
-              if (!cancelled) controller.close();
+              controller.enqueue(record(value));
+              return true;
+            } catch {
+              streamOpen = false;
+              cancelled = true;
+              return false;
             }
           };
 
-          void execute();
+          const finish = () => {
+            if (!streamOpen || cancelled) return;
+            streamOpen = false;
+            try { controller.close(); } catch {}
+          };
+
+          // Commit the response body immediately. The browser receives this
+          // before objective extraction, MCP discovery, or provider tokens.
+          send({ type: 'ready' });
+
+          void (async () => {
+            try {
+              const result = await runWithMerchantMcpRepo(activeRepo, () => runAgent({
+                ...parsed.input,
+                onEvent: async (event: unknown) => {
+                  send({ type: 'event', event });
+                },
+              }));
+
+              send({ type: 'result', result });
+            } catch (error) {
+              console.error('Agent Execute native stream failed:', error);
+              send({ type: 'error', error: errorPayload(error) });
+            } finally {
+              await closeRepo();
+              finish();
+            }
+          })();
         },
         async cancel() {
           cancelled = true;
@@ -141,7 +189,7 @@ export default {
         headers: {
           'content-type': 'application/x-ndjson; charset=utf-8',
           'cache-control': 'no-cache, no-store, no-transform',
-          'x-accel-buffering': 'no',
+          'x-content-type-options': 'nosniff',
         },
       });
     } catch (error) {
