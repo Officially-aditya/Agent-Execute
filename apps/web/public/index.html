@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/stream-ui.css" />
   <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </head>
 <body>
@@ -22,7 +23,6 @@
 
     <main class="home-main">
       <div class="home-copy">
-        <div class="home-kicker"><span></span> Verified agent checkout</div>
         <h1>What do you want<br />the agent to buy?</h1>
         <p>Give it the outcome. It can search, compare and recover through live merchant tools. You still approve the exact amount before payment.</p>
       </div>
@@ -80,6 +80,7 @@
 
   <div id="toast" class="toast" hidden></div>
   <script type="module" src="/runtime.js"></script>
+  <script type="module" src="/stream-runtime.js"></script>
   <script type="module" src="/app.js"></script>
 </body>
 </html>
