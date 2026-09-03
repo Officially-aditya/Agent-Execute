@@ -1,6 +1,6 @@
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
-import { NeonMerchantRepository, hasNeonDatabase } from '@vac/merchant-core/neon';
+import { NeonMerchantRepository, hasNeonDatabase } from '../../../packages/merchant-core/src/neon.js';
 import { createMerchantMcpServer } from '../../merchant-mcp/src/server.js';
 
 export async function connectMerchantMcp() {
