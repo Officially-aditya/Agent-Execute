@@ -3,7 +3,7 @@
   "rewrites": [
     {
       "source": "/health",
-      "destination": "/api/server?__path=/health"
+      "destination": "/api/health"
     },
     {
       "source": "/api/:path*",
