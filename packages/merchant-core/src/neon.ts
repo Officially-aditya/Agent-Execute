@@ -1,6 +1,6 @@
 import { Pool } from '@neondatabase/serverless';
 import { randomUUID } from 'node:crypto';
-import { DomainError, nowIso, type AgentTaskState, type Approval, type CartSnapshot, type ExecutionGrant, type Product, type Quote } from '@vac/shared';
+import { DomainError, nowIso, type AgentTaskState, type Approval, type CartSnapshot, type ExecutionGrant, type Product, type Quote } from '../../shared/src/index.js';
 import { CURRENCY, MERCHANT_ID, SEED_PRODUCTS } from './catalog.js';
 
 export type AuditEvent = { id: string; type: string; at: string; data: Record<string, unknown> };
