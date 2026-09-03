@@ -80,11 +80,24 @@ if (firstReady < 0 || runtimeLoad < 0 || firstReady > runtimeLoad) {
 }
 
 const clientSource = await readFile('apps/web/public/chat-stream.js', 'utf8');
+const runtimeSource = await readFile('apps/web/public/runtime.js', 'utf8');
 if (!clientSource.includes('/api/agent-stream?__path=')) {
   throw new Error('The browser must call the agent stream function directly instead of relying on a rewrite for live transport.');
 }
-if (!clientSource.includes("error: 'empty_agent_response'")) {
-  throw new Error('The browser must surface empty final agent responses instead of silently rendering nothing.');
+if (!clientSource.includes('window.agentStreamFetch = async function agentStreamFetch')) {
+  throw new Error('chat-stream.js must expose an explicit stream transport to the browser runtime.');
+}
+if (/window\.fetch\s*=/.test(clientSource)) {
+  throw new Error('chat-stream.js must not monkey-patch window.fetch.');
+}
+if (!clientSource.includes("error: 'stream_render_failed'")) {
+  throw new Error('The browser must surface stream rendering failures instead of silently rendering nothing.');
+}
+if (!runtimeSource.includes("typeof window.agentStreamFetch !== 'function'")) {
+  throw new Error('runtime.js must explicitly route agent POSTs through the stream client.');
+}
+if (!runtimeSource.includes("error: 'stream_client_unavailable'")) {
+  throw new Error('runtime.js must fail visibly if the stream client did not initialize.');
 }
 
-console.log(`Vercel stream graph verified: ${inputs.length} internal source modules bundled, direct client transport enabled, 0 @vac/* runtime imports, 0 SQLite leakage.`);
+console.log(`Vercel stream graph verified: ${inputs.length} internal source modules bundled, explicit client stream routing enabled, 0 @vac/* runtime imports, 0 SQLite leakage.`);
