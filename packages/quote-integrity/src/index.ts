@@ -2,7 +2,7 @@ import { createHash, createPublicKey, generateKeyPairSync, randomUUID, sign, ver
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type { Approval, CartSnapshot, ExecutionGrant, Quote } from '@vac/shared';
-import { nowIso } from '@vac/shared';
+import { DomainError, nowIso } from '@vac/shared';
 import type { MerchantRepository } from '@vac/merchant-core';
 
 export function canonicalizeCart(snapshot: CartSnapshot): string {
@@ -55,8 +55,6 @@ export function loadOrCreateMerchantKeys(): MerchantKeys {
   });
 
   try {
-    // Only one process may create the authority-bearing private key. Losers
-    // discard their generated pair and derive the public key from the winner.
     writeFileSync(privatePath(), pair.privateKey, { mode: 0o600, flag: 'wx' });
     writeFileSync(publicPath(), pair.publicKey, { mode: 0o644 });
     return { privateKey: pair.privateKey, publicKey: pair.publicKey };
@@ -74,7 +72,8 @@ export function verifyQuoteSignature(quote: Quote, publicKey: string): boolean {
 
 export function commitQuote(repo: MerchantRepository, cartId: string, ttlSeconds = Number(process.env.QUOTE_TTL_SECONDS || 60)): Quote {
   const snapshot = repo.getCartSnapshot(cartId);
-  if (snapshot.items.length === 0) throw new Error('cannot commit an empty cart');
+  if (snapshot.items.length === 0) throw new DomainError('STALE_CART', 'Cannot commit an empty cart', { cart_id: cartId });
+  if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) throw new DomainError('QUOTE_EXPIRED', 'Quote TTL must be positive');
   const issuedAt = nowIso();
   const validUntil = new Date(Date.now() + ttlSeconds * 1000).toISOString();
   const base = { quoteId: `quote_${randomUUID()}`, merchantId: snapshot.merchantId, cartId: snapshot.cartId, cartRevision: snapshot.revision, amount: snapshot.total, currency: snapshot.currency, cartDigest: digestCart(snapshot), issuedAt, validUntil, nonce: randomUUID() };
@@ -85,9 +84,15 @@ export function commitQuote(repo: MerchantRepository, cartId: string, ttlSeconds
 }
 
 export function approveQuote(repo: MerchantRepository, quoteId: string): { approval: Approval; grant: ExecutionGrant } {
-  const quote = repo.getQuote(quoteId); if (!quote) throw new Error('quote not found'); if (Date.parse(quote.validUntil) <= Date.now()) throw new Error('quote expired');
+  const quote = repo.getQuote(quoteId);
+  if (!quote) throw new DomainError('REPLAY_ATTEMPT', 'Committed quote does not exist', { quote_id: quoteId });
+  if (Date.parse(quote.validUntil) <= Date.now()) throw new DomainError('QUOTE_EXPIRED', 'Committed quote expired', { quote_id: quoteId, valid_until: quote.validUntil });
+  const { publicKey } = loadOrCreateMerchantKeys();
+  if (!verifyQuoteSignature(quote, publicKey)) throw new DomainError('INVALID_SIGNATURE', 'Merchant quote signature is invalid', { quote_id: quoteId });
   const createdAt = nowIso();
   const approval: Approval = { approvalId: `approval_${randomUUID()}`, quoteId: quote.quoteId, cartDigest: quote.cartDigest, amount: quote.amount, currency: quote.currency, expiresAt: quote.validUntil, createdAt };
   const grant: ExecutionGrant = { grantId: `grant_${randomUUID()}`, quoteId: quote.quoteId, approvalId: approval.approvalId, cartDigest: quote.cartDigest, amount: quote.amount, currency: quote.currency, expiresAt: quote.validUntil, nonce: randomUUID() };
-  repo.saveApproval(approval); repo.saveGrant(grant); return { approval, grant };
+  repo.saveApproval(approval);
+  repo.saveGrant(grant);
+  return { approval, grant };
 }
