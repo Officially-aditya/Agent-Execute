@@ -24,12 +24,20 @@ function failure(error: unknown) {
 }
 
 function createServer(): McpServer {
-  const server = new McpServer({ name: 'verified-agent-merchant', version: '0.1.0' });
+  const server = new McpServer({ name: 'verified-agent-merchant', version: '0.2.0' });
 
   const tool = (name: string, description: string, inputSchema: z.ZodObject<any>, handler: (args: any) => unknown | Promise<unknown>) => {
     server.registerTool(name, { description, inputSchema }, async (args: any) => {
       appendAudit(repo.db, 'AGENT_TOOL_CALLED', { tool: name, arguments: args as Record<string, unknown> });
-      try { return result(await handler(args)); } catch (e) { return failure(e); }
+      try {
+        const value = await handler(args);
+        appendAudit(repo.db, 'AGENT_TOOL_RESULT', { tool: name, ok: true });
+        return result(value);
+      } catch (e) {
+        const payload = e instanceof DomainError ? e.toJSON() : { error: 'TOOL_ERROR', message: e instanceof Error ? e.message : String(e) };
+        appendAudit(repo.db, 'AGENT_TOOL_RESULT', { tool: name, ok: false, result: payload });
+        return failure(e);
+      }
     });
   };
 
@@ -42,7 +50,11 @@ function createServer(): McpServer {
   tool('update_quantity', 'Set exact product quantity. Set zero to remove.', z.object({ cart_id: z.string(), product_id: z.string(), quantity: z.number().int().min(0) }), ({ cart_id, product_id, quantity }) => repo.updateQuantity(cart_id, product_id, quantity));
   tool('commit_quote', 'Cryptographically commit the exact current cart. This does not approve payment.', z.object({ cart_id: z.string() }), ({ cart_id }) => commitQuote(repo, cart_id));
   tool('execute_payment', 'Request guarded payment execution using only a server-issued grant_id. There is intentionally no amount parameter.', z.object({ grant_id: z.string().min(1) }), ({ grant_id }) => guard.execute(grant_id));
-  tool('get_payment_status', 'Read idempotent execution status for a grant.', z.object({ grant_id: z.string().min(1) }), ({ grant_id }) => repo.getExecution(grant_id));
+  tool('get_payment_status', 'Read the guarded execution state plus any Razorpay Checkout/payment state for a grant.', z.object({ grant_id: z.string().min(1) }), ({ grant_id }) => {
+    const execution = repo.getExecution(grant_id);
+    const payment = execution?.orderId ? repo.getPaymentRecord(execution.orderId) : null;
+    return { grant_id, execution, payment };
+  });
 
   return server;
 }
