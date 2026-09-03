@@ -1,0 +1,11 @@
+.activity-group{display:none!important}
+.stream-activity{display:flex;flex-direction:column;gap:5px;margin-top:10px;max-width:560px}
+.stream-activity-row{display:grid;grid-template-columns:18px minmax(0,1fr) auto;align-items:center;gap:8px;padding:3px 0;color:#a5a5af;font-size:11px;line-height:1.4}
+.stream-icon{display:grid;place-items:center;width:17px;height:17px;border:1px solid rgba(255,255,255,.1);border-radius:5px;background:rgba(255,255,255,.04);color:#d1d1d9;font-size:9px}
+.stream-status{color:#73737e;font:8px var(--mono);text-transform:uppercase;letter-spacing:.04em}
+.stream-activity-row.pending .stream-icon{animation:streamPulse 1.1s ease-in-out infinite}
+.stream-activity-row.complete .stream-icon{color:var(--green)}
+.stream-activity-row.failed .stream-icon{color:var(--amber)}
+.stream-activity-row.complete{color:#91919b}
+.stream-activity-row.failed{color:#c8ad79}
+@keyframes streamPulse{0%,100%{opacity:.48}50%{opacity:1}}
