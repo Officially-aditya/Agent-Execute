@@ -3,188 +3,105 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#0a1833" />
-  <title>Agent Execute — Verified agent checkout</title>
+  <meta name="theme-color" content="#09090b" />
+  <title>Agent Execute</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
   <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </head>
 <body>
-  <div class="app-shell">
-    <header class="topbar">
-      <a class="brand-lockup" href="/" aria-label="Agent Execute home">
-        <span class="mark" aria-hidden="true"><span>AE</span></span>
-        <span class="brand-copy"><strong>Agent Execute</strong><small>Verified checkout for agents</small></span>
-      </a>
-      <div class="topbar-actions">
-        <span class="rail-status"><i></i><span>Razorpay test rail</span></span>
-        <div class="status"><span id="healthDot" class="dot"></span><span id="healthText">Checking services…</span></div>
-        <button id="newSession" class="button button-quiet">New session</button>
+  <div class="background" aria-hidden="true"></div>
+
+  <section id="homeView" class="home-view">
+    <header class="home-nav">
+      <a class="brand" href="/" aria-label="Agent Execute home"><span class="brand-mark">AE</span><span>Agent Execute</span></a>
+      <div class="home-status"><span id="healthDot" class="health-dot"></span><span id="healthText">Checking services…</span></div>
+    </header>
+
+    <main class="home-main">
+      <div class="home-copy">
+        <div class="home-kicker"><span></span> Verified agent checkout</div>
+        <h1>What do you want<br />the agent to buy?</h1>
+        <p>Give it the outcome. It can search, compare and recover through live merchant tools. You still approve the exact amount before payment.</p>
+      </div>
+
+      <form id="homeForm" class="hero-composer" autocomplete="off">
+        <div class="hero-input-wrap">
+          <textarea id="homeInput" rows="1" aria-label="Shopping request" placeholder=""></textarea>
+          <span id="animatedPlaceholder" class="animated-placeholder">Buy milk, eggs and cereal under ₹500</span>
+          <button id="homeSend" class="hero-send" type="submit" aria-label="Run request">
+            <span>↑</span>
+          </button>
+        </div>
+        <div class="hero-meta">
+          <span><i></i> Live merchant MCP</span>
+          <span>Razorpay test mode</span>
+        </div>
+      </form>
+
+      <div class="suggestions" aria-label="Example requests">
+        <button data-prompt="Buy milk, eggs and cereal under ₹500.">Milk, eggs and cereal · ₹500</button>
+        <button data-prompt="Get bread, eggs and coffee for less than ₹450.">Breakfast · under ₹450</button>
+        <button data-prompt="Buy rice and butter. Prefer the cheaper options.">Rice + butter · cheapest</button>
+      </div>
+    </main>
+  </section>
+
+  <section id="chatView" class="chat-view" hidden>
+    <header class="chat-header">
+      <button id="brandHome" class="chat-brand" type="button"><span class="brand-mark small">AE</span><span>Agent Execute</span></button>
+      <div class="chat-header-center">
+        <span id="phaseBadge" class="phase-badge">READY</span>
+        <span id="sessionBadge" class="session-badge">No active session</span>
+      </div>
+      <div class="chat-header-actions">
+        <button id="judgeButton" class="header-button" type="button">Judge mode</button>
+        <button id="newSession" class="header-button icon-button" type="button" aria-label="New chat">＋</button>
       </div>
     </header>
 
-    <section class="proof-rail" aria-label="Verified checkout invariant">
-      <div class="proof-thesis">
-        <span class="proof-kicker">PAYMENT AUTHORITY</span>
-        <div class="invariant" aria-label="Seen equals committed equals approved equals charged">
-          <strong>SEEN</strong><span>=</span><strong>COMMITTED</strong><span>=</span><strong>APPROVED</strong><span>=</span><strong>CHARGED</strong>
-        </div>
-        <p>The model may choose commerce. Only verified state may choose money.</p>
-      </div>
-      <div class="trust-flow" aria-label="Live execution stages">
-        <div id="stepAgent" class="trust-step active"><span class="step-index">A</span><div><b>Agent</b><small>choose</small></div></div>
-        <span class="flow-line"></span>
-        <div id="stepMcp" class="trust-step"><span class="step-index">M</span><div><b>MCP</b><small>read live state</small></div></div>
-        <span class="flow-line"></span>
-        <div id="stepCommit" class="trust-step"><span class="step-index">C</span><div><b>Commit</b><small>sign exact cart</small></div></div>
-        <span class="flow-line"></span>
-        <div id="stepGuard" class="trust-step"><span class="step-index">G</span><div><b>Guard</b><small>verify grant</small></div></div>
-        <span class="flow-line"></span>
-        <div id="stepPay" class="trust-step"><span class="step-index">₹</span><div><b>Razorpay</b><small>charge proof</small></div></div>
-      </div>
-    </section>
-
-    <main class="workspace">
-      <section class="workbench panel conversation-panel">
-        <div class="panel-header conversation-header">
-          <div class="title-block">
-            <span class="eyebrow">SHOPPING REQUEST</span>
-            <h1>Give the agent the goal.<br><em>Keep the amount out of its hands.</em></h1>
-            <p>Agent Execute can search, compare and recover through live merchant tools. Payment remains bound to the exact state you approved.</p>
-          </div>
-          <div class="session-meta" aria-label="Current session state">
-            <span id="phaseBadge" class="phase-badge">READY</span>
-            <span id="sessionBadge" class="session-badge">No active session</span>
-          </div>
-        </div>
-
-        <div class="prompt-row" aria-label="Example shopping requests">
-          <span class="prompt-label">Try a request</span>
-          <button class="prompt-chip" data-prompt="Buy milk, eggs and cereal under ₹500.">Milk, eggs, cereal · ₹500</button>
-          <button class="prompt-chip" data-prompt="Get bread, eggs and coffee for less than ₹450.">Breakfast · under ₹450</button>
-          <button class="prompt-chip" data-prompt="Buy rice and butter. Prefer the cheaper options.">Rice + butter · cheapest</button>
-        </div>
-
-        <div id="messages" class="messages" aria-live="polite">
-          <div class="message assistant">
-            <div class="avatar agent-avatar" aria-hidden="true">AE</div>
-            <div class="message-content">
-              <div class="message-author"><b>Agent Execute</b><span>connected to merchant MCP</span></div>
-              <p>Tell me what you want to buy. I’ll operate the live merchant, commit the exact checkout state, and stop before payment so you can approve the amount.</p>
-            </div>
-          </div>
-        </div>
-
-        <form id="chatForm" class="composer">
-          <label class="composer-label" for="chatInput">What should the agent buy?</label>
-          <textarea id="chatInput" rows="2" placeholder="Buy milk, cereal and juice under ₹500…"></textarea>
-          <div class="composer-actions">
-            <span class="composer-note"><i></i> Real LLM · live MCP · no scripted path</span>
-            <button id="sendButton" class="button button-primary" type="submit">Run request <span aria-hidden="true">→</span></button>
-          </div>
-        </form>
-      </section>
-
-      <aside class="settlement-stack">
-        <section class="panel cart-panel">
-          <div class="panel-header compact-header">
-            <div><span class="eyebrow">SERVER TRUTH</span><h2>Current merchant cart</h2></div>
-            <span id="revision" class="revision-pill">rev —</span>
-          </div>
-          <div id="cartEmpty" class="cart-empty">
-            <div class="cart-empty-mark" aria-hidden="true">∅</div>
-            <div><b>No committed value yet</b><p>The cart will appear here only after the agent creates it through MCP.</p></div>
-          </div>
-          <div id="cartBody" hidden>
-            <div id="cartItems" class="cart-items"></div>
-            <div class="totals">
-              <div><span>Subtotal</span><b id="subtotal"></b></div>
-              <div><span>Discount</span><b id="discount" class="positive"></b></div>
-              <div><span>Delivery</span><b id="delivery"></b></div>
-              <div class="grand"><span>Authoritative total</span><b id="total"></b></div>
-            </div>
-          </div>
-        </section>
-
-        <section id="approvalPanel" class="panel authority-card approval" hidden>
-          <div class="authority-head"><span class="authority-seal">SIGNED</span><span class="eyebrow">YOUR AUTHORITY</span></div>
-          <h2>Approve this exact state</h2>
-          <p class="authority-copy">The amount, cart digest and expiry below are one signed quote. Approval applies to this quote only.</p>
-          <div class="quote-amount" id="quoteAmount">₹—</div>
-          <div class="quote-details">
-            <div class="quote-meta"><span>Quote</span><code id="quoteId"></code></div>
-            <div class="quote-meta"><span>Cart digest</span><code id="quoteDigest"></code></div>
-            <div class="quote-meta"><span>Merchant signature</span><code id="quoteSignature"></code></div>
-            <div class="quote-meta"><span>Expires</span><code id="quoteExpiry"></code></div>
-          </div>
-          <button id="approveButton" class="button button-authorize">Approve exact amount <span aria-hidden="true">→</span></button>
-          <p class="fine">The agent cannot press this button, create the grant, or supply a different amount to payment.</p>
-        </section>
-
-        <section id="executionPanel" class="panel authority-card execution" hidden>
-          <div class="authority-head"><span class="authority-seal amber">GRANTED</span><span class="eyebrow">EXECUTION WINDOW</span></div>
-          <h2>Approval is locked.</h2>
-          <p class="authority-copy">Change merchant state in Judge Mode if you want to create a race. The guard will re-read everything before Razorpay.</p>
-          <button id="continueButton" class="button button-primary full-width">Verify live state & continue <span aria-hidden="true">→</span></button>
-        </section>
-
-        <section id="paymentPanel" class="panel authority-card payment" hidden>
-          <div class="authority-head"><span class="authority-seal cobalt">VERIFIED</span><span class="eyebrow">RAZORPAY TEST MODE</span></div>
-          <h2>Payment order is bound to proof.</h2>
-          <p class="authority-copy">The deterministic guard passed. Razorpay received the amount from the verified quote—not from the model or browser.</p>
-          <div class="order-box"><span>RAZORPAY ORDER</span><code id="orderId"></code></div>
-          <button id="checkoutButton" class="button button-razorpay full-width">Open test checkout <span aria-hidden="true">↗</span></button>
-        </section>
-      </aside>
-
-      <section class="panel inspector-panel">
-        <div class="panel-header inspector-header">
-          <div>
-            <span class="eyebrow">JUDGE MODE</span>
-            <h2>Inspect the boundary, not a pre-recorded demo.</h2>
-            <p>Watch actual tool calls, mutate the merchant while approval is live, and inspect the append-only audit record.</p>
-          </div>
-          <button id="refreshAudit" class="button button-quiet">Refresh audit</button>
-        </div>
-
-        <div class="tabs" role="tablist" aria-label="Judge inspection views">
-          <button class="tab active" data-tab="activity"><span class="tab-sigil">↳</span>Agent / MCP</button>
-          <button class="tab" data-tab="audit"><span class="tab-sigil">≡</span>Audit trail</button>
-          <button class="tab" data-tab="merchant"><span class="tab-sigil">±</span>Merchant controls</button>
-        </div>
-
-        <div id="activity" class="tab-content active">
-          <div class="inspector-caption"><b>Live execution trace</b><span>Tool-visible actions only; no hidden reasoning</span></div>
-          <div id="events" class="events"><div class="empty-state"><span class="empty-state-mark">↳</span><div><b>No tool calls yet</b><p>Run a request above. Calls and structured results will appear here as the model operates the merchant.</p></div></div></div>
-        </div>
-
-        <div id="audit" class="tab-content">
-          <div class="inspector-caption"><b>Append-only system audit</b><span>Commit → approval → guard → payment</span></div>
-          <div id="auditEvents" class="events"></div>
-        </div>
-
-        <div id="merchant" class="tab-content">
-          <div class="merchant-head">
-            <div><b>Change the merchant. Do not instruct the agent.</b><p>These controls mutate the same state the MCP server exposes. Recovery remains model-generated.</p></div>
-            <button id="resetMerchant" class="button button-danger">Reset merchant</button>
-          </div>
-          <div class="merchant-settings">
-            <label><span>Discount</span><div class="input-unit"><span>₹</span><input id="discountInput" type="number" min="0" step="1"/></div><button data-setting="discount" class="button button-quiet">Apply</button></label>
-            <label><span>Delivery fee</span><div class="input-unit"><span>₹</span><input id="deliveryInput" type="number" min="0" step="1"/></div><button data-setting="delivery" class="button button-quiet">Apply</button></label>
-          </div>
-          <div id="products" class="product-grid"></div>
-        </div>
-      </section>
+    <main class="chat-main">
+      <div id="messages" class="messages" aria-live="polite"></div>
+      <div class="chat-spacer"></div>
     </main>
 
-    <footer class="footer">
-      <span class="footer-brand">Agent Execute</span>
-      <span class="footer-rule">The AI can choose what to buy. It can never choose what Razorpay charges.</span>
-      <span class="footer-mode">Test merchant · INR</span>
-    </footer>
-  </div>
+    <div class="composer-dock">
+      <form id="chatForm" class="chat-composer" autocomplete="off">
+        <textarea id="chatInput" rows="1" placeholder="Ask Agent Execute" aria-label="Message Agent Execute"></textarea>
+        <div class="composer-bottom">
+          <div class="composer-left"><span class="plus">＋</span><span class="composer-state"><i></i> live tools</span></div>
+          <button id="sendButton" class="send-button" type="submit" aria-label="Send message">↑</button>
+        </div>
+      </form>
+      <p class="composer-footnote">The agent can choose what to buy. It cannot choose what Razorpay charges.</p>
+    </div>
+  </section>
+
+  <div id="drawerBackdrop" class="drawer-backdrop" hidden></div>
+  <aside id="judgeDrawer" class="judge-drawer" aria-label="Judge mode" aria-hidden="true">
+    <div class="drawer-header">
+      <div><span class="drawer-kicker">Judge mode</span><h2>Inspect the real boundary</h2><p>Raw tool calls, audit events, and the same merchant state the agent sees.</p></div>
+      <button id="closeJudge" class="drawer-close" type="button" aria-label="Close judge mode">×</button>
+    </div>
+    <div class="drawer-tabs" role="tablist">
+      <button class="tab active" data-tab="activity">Agent / MCP</button>
+      <button class="tab" data-tab="audit">Audit</button>
+      <button class="tab" data-tab="merchant">Merchant</button>
+    </div>
+    <div id="activity" class="tab-content active"><div class="drawer-toolbar"><span>Tool-visible actions only</span></div><div id="events" class="events"><div class="drawer-empty">Run a request to inspect tool calls.</div></div></div>
+    <div id="audit" class="tab-content"><div class="drawer-toolbar"><span>Append-only system events</span><button id="refreshAudit" type="button">Refresh</button></div><div id="auditEvents" class="events"></div></div>
+    <div id="merchant" class="tab-content">
+      <div class="merchant-intro"><div><b>Change the merchant, not the demo.</b><p>Mutations affect the same state exposed through MCP.</p></div><button id="resetMerchant" class="danger-button" type="button">Reset</button></div>
+      <div class="merchant-settings">
+        <label><span>Discount</span><div><span>₹</span><input id="discountInput" type="number" min="0" step="1"/><button data-setting="discount" type="button">Apply</button></div></label>
+        <label><span>Delivery</span><div><span>₹</span><input id="deliveryInput" type="number" min="0" step="1"/><button data-setting="delivery" type="button">Apply</button></div></label>
+      </div>
+      <div id="products" class="product-grid"></div>
+    </div>
+  </aside>
+
   <div id="toast" class="toast" hidden></div>
   <script type="module" src="/app.js"></script>
 </body>
