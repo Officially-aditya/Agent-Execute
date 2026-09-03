@@ -127,7 +127,7 @@ export default {
       };
 
       const stream = new ReadableStream<Uint8Array>({
-        start(controller) {
+        async start(controller) {
           let streamOpen = true;
 
           const send = (value: unknown) => {
@@ -152,24 +152,22 @@ export default {
           // before objective extraction, MCP discovery, or provider tokens.
           send({ type: 'ready' });
 
-          void (async () => {
-            try {
-              const result = await runWithMerchantMcpRepo(activeRepo, () => runAgent({
-                ...parsed.input,
-                onEvent: async (event: unknown) => {
-                  send({ type: 'event', event });
-                },
-              }));
+          try {
+            const result = await runWithMerchantMcpRepo(activeRepo, () => runAgent({
+              ...parsed.input,
+              onEvent: async (event: unknown) => {
+                send({ type: 'event', event });
+              },
+            }));
 
-              send({ type: 'result', result });
-            } catch (error) {
-              console.error('Agent Execute native stream failed:', error);
-              send({ type: 'error', error: errorPayload(error) });
-            } finally {
-              await closeRepo();
-              finish();
-            }
-          })();
+            send({ type: 'result', result });
+          } catch (error) {
+            console.error('Agent Execute native stream failed:', error);
+            send({ type: 'error', error: errorPayload(error) });
+          } finally {
+            await closeRepo();
+            finish();
+          }
         },
         async cancel() {
           cancelled = true;
