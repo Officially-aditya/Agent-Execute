@@ -158,19 +158,23 @@ async function streamedAssistantCompletion(
         id: call.id || `call_${index}_${randomUUID()}`,
       }));
 
+    if (!content && !calls.length) {
+      throw new Error('LLM stream completed without text or tool calls. Check the configured Gemini model and OpenAI-compatible streaming support.');
+    }
+
     return {
       role: 'assistant',
       content: content || null,
       ...(calls.length ? { tool_calls: calls } : {}),
     };
   } catch (error) {
-    // Some OpenAI-compatible providers can reject streaming while still
-    // supporting ordinary chat completions. Fall back only if nothing was
-    // emitted yet, so a partially streamed response is never duplicated.
     if (sawChunk) throw error;
     const completion: any = await openai.chat.completions.create(request as any);
     const assistant = completion.choices?.[0]?.message;
     if (!assistant) throw new Error('LLM returned no message');
+    if (!assistant.content && !(assistant.tool_calls?.length)) {
+      throw new Error('LLM returned an empty assistant response. Check the configured Gemini model and provider compatibility.');
+    }
     return assistant as StreamedAssistant;
   }
 }
@@ -238,7 +242,8 @@ export async function runAgent(input: {
 
       if (!calls.length) {
         const text = assistant.content || '';
-        if (text) await emit({ type: 'model', at: nowIso(), text });
+        if (!text) throw new Error('LLM returned an empty final assistant response.');
+        await emit({ type: 'model', at: nowIso(), text });
         state.updatedAt = nowIso();
         await input.repo.saveSession(state, messages);
         return { session_id: state.sessionId, message: text, state, events };
