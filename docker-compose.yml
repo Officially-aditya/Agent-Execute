@@ -5,6 +5,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: /data/agent-execute.sqlite
+      MERCHANT_KEY_DIR: /data/keys
     ports:
       - "3001:3001"
     volumes:
@@ -15,6 +16,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: /data/agent-execute.sqlite
+      MERCHANT_KEY_DIR: /data/keys
       WEB_ORIGIN: http://localhost:3001
     ports:
       - "3002:3002"
