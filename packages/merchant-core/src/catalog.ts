@@ -1,4 +1,4 @@
-import type { Product } from '@vac/shared';
+import type { Product } from '../../shared/src/index.js';
 
 export const MERCHANT_ID = 'merchant_demo';
 export const CURRENCY = 'INR' as const;
