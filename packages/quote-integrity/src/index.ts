@@ -28,8 +28,9 @@ export function digestCart(snapshot: CartSnapshot): string {
 }
 
 export type MerchantKeys = { privateKey: string; publicKey: string };
-const privatePath = () => resolve(process.cwd(), '.data/merchant-private.pem');
-const publicPath = () => resolve(process.cwd(), '.data/merchant-public.pem');
+const keyDir = () => resolve(process.cwd(), process.env.MERCHANT_KEY_DIR || '.data');
+const privatePath = () => resolve(keyDir(), 'merchant-private.pem');
+const publicPath = () => resolve(keyDir(), 'merchant-public.pem');
 
 export function loadOrCreateMerchantKeys(): MerchantKeys {
   const envPrivate = process.env.MERCHANT_SIGNING_PRIVATE_KEY?.replace(/\\n/g, '\n');
