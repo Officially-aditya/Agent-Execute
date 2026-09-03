@@ -5,6 +5,45 @@ import { approveQuoteAsync, loadOrCreateMerchantKeys, verifyQuoteSignature } fro
 import { RazorpayAdapter } from '../../../packages/razorpay/src/index.js';
 import { DomainError } from '../../../packages/shared/src/index.js';
 
+function agentErrorPayload(error: unknown) {
+  return error instanceof DomainError
+    ? error.toJSON()
+    : { error: 'agent_error', message: error instanceof Error ? error.message : String(error) };
+}
+
+function wantsAgentStream(req: express.Request): boolean {
+  return String(req.headers.accept || '').includes('application/x-ndjson');
+}
+
+async function respondWithAgent(req: express.Request, res: express.Response, input: Parameters<typeof runAgent>[0]) {
+  if (!wantsAgentStream(req)) {
+    res.json(await runAgent(input));
+    return;
+  }
+
+  res.status(200);
+  res.setHeader('content-type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('cache-control', 'no-cache, no-transform');
+  res.setHeader('x-accel-buffering', 'no');
+  res.flushHeaders?.();
+
+  const write = (record: unknown) => {
+    if (!res.writableEnded) res.write(`${JSON.stringify(record)}\n`);
+  };
+
+  try {
+    const result = await runAgent({
+      ...input,
+      onEvent: (event) => write({ type: 'event', event }),
+    });
+    write({ type: 'result', result });
+  } catch (error) {
+    write({ type: 'error', error: agentErrorPayload(error) });
+  } finally {
+    if (!res.writableEnded) res.end();
+  }
+}
+
 export function createAgentApp(repo: any) {
   const app = express();
   const razorpay = new RazorpayAdapter();
@@ -29,9 +68,9 @@ export function createAgentApp(repo: any) {
     try {
       const { message, session_id } = req.body || {};
       if (typeof message !== 'string' || !message.trim()) return res.status(400).json({ error: 'message_required' });
-      res.json(await runAgent({ repo, message, sessionId: typeof session_id === 'string' ? session_id : undefined }));
+      await respondWithAgent(req, res, { repo, message, sessionId: typeof session_id === 'string' ? session_id : undefined });
     } catch (error) {
-      res.status(500).json(error instanceof DomainError ? error.toJSON() : { error: 'agent_error', message: error instanceof Error ? error.message : String(error) });
+      if (!res.headersSent) res.status(500).json(agentErrorPayload(error));
     }
   });
 
@@ -42,9 +81,9 @@ export function createAgentApp(repo: any) {
       const instruction = session.state.activeGrantId
         ? `The user approved quote ${session.state.activeQuoteId}. The trusted execution grant is ${session.state.activeGrantId}. Continue the task using normal MCP tools.`
         : 'Continue the shopping task from the trusted persisted state.';
-      res.json(await runAgent({ repo, sessionId: req.params.sessionId, trustedInstruction: instruction }));
+      await respondWithAgent(req, res, { repo, sessionId: req.params.sessionId, trustedInstruction: instruction });
     } catch (error) {
-      res.status(500).json(error instanceof DomainError ? error.toJSON() : { error: 'agent_error', message: error instanceof Error ? error.message : String(error) });
+      if (!res.headersSent) res.status(500).json(agentErrorPayload(error));
     }
   });
 
@@ -194,7 +233,7 @@ export function createAgentApp(repo: any) {
 
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error(error);
-    res.status(500).json({ error: 'internal_server_error' });
+    if (!res.headersSent) res.status(500).json({ error: 'internal_server_error' });
   });
 
   return app;
