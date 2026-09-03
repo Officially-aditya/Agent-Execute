@@ -22,7 +22,7 @@ If execute_payment returns QUOTE_CHANGED or STALE_CART, recover dynamically thro
 If a quote or approval has expired, refresh authoritative cart state, obtain a fresh quote, then STOP for fresh user approval. Never reuse expired authorization.
 If execute_payment returns GRANT_ALREADY_USED, call get_payment_status before deciding anything else. Never create a second payment attempt merely because the tool was retried.
 If a payment-rail operation returns PAYMENT_FAILED with retry_allowed=true, retry only through the existing trusted payment primitive and never modify payment fields or amount.
-If you receive INVALID_SIGNATURE, AMOUNT_MISMATCH, CURRENCY_MISMATCH, MERCHANT_MISMATCH, REPLAY_ATTEMPT, PAYMENT_VERIFICATION_FAILED, or another integrity/security failure, STOP and report it. Never attempt to bypass, weaken, or work around a security check.
+If you receive INVALID_SIGNATURE, AMOUNT_MISMATCH, CURRENCY_MISMATCH, MERCHANT_MISMATCH, REPLAY_ATTEMPT, GRANT_ALREADY_USED, PAYMENT_VERIFICATION_FAILED, or another integrity/security failure, STOP and report it. Never attempt to bypass, weaken, or work around a security check.
 If recovery would exceed budget, remove a required item, change requested quantity, or materially change the requested product, ask the user instead.
 A payment-rail failure is different from a quote-integrity failure. Preserve that distinction in your response.
 Do not write user-facing prose in the same turn in which you invoke tools; when a tool is needed, emit the tool call only.
@@ -263,16 +263,6 @@ export async function runAgent(input: {
         updateStateFromTool(state, toolName, parsed);
         await emit({ type: 'state', at: nowIso(), state: structuredClone(state) });
         messages.push({ role: 'tool', tool_call_id: call.id, content: text });
-
-        if (toolName === 'commit_quote' && !parsed?.error) {
-          const textOut = `Your cart is locked to a fresh merchant-signed quote.\n\n**Total:** ₹${(parsed.amount / 100).toFixed(2)}\n\nApprove this exact amount to continue to payment.`;
-          messages.push({ role: 'assistant', content: textOut });
-          if (input.onEvent) await emitTransient({ type: 'model_delta', at: nowIso(), text: textOut });
-          await emit({ type: 'model', at: nowIso(), text: textOut });
-          state.updatedAt = nowIso();
-          await input.repo.saveSession(state, messages);
-          return { session_id: state.sessionId, message: textOut, state, events };
-        }
       }
 
       state.updatedAt = nowIso();
