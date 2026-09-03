@@ -10,5 +10,5 @@
     "types": ["node"],
     "noUncheckedIndexedAccess": true
   },
-  "include": ["src/**/*.ts", "apps/**/*.ts", "packages/**/*.ts", "tests/**/*.ts"]
+  "include": ["src/**/*.ts", "api/**/*.ts", "apps/**/*.ts", "packages/**/*.ts", "tests/**/*.ts"]
 }
