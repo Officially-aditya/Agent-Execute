@@ -1,13 +1,10 @@
-let app: any = null;
+import { NeonMerchantRepository } from '../packages/merchant-core/src/neon.js';
+import { createAgentApp } from '../apps/agent-service/src/app.js';
 
-async function getApp() {
+let app: ReturnType<typeof createAgentApp> | null = null;
+
+function getApp() {
   if (app) return app;
-
-  const [{ NeonMerchantRepository }, { createAgentApp }] = await Promise.all([
-    import('@vac/merchant-core/neon'),
-    import('../apps/agent-service/src/app.js'),
-  ]);
-
   const repo = new NeonMerchantRepository();
   app = createAgentApp(repo);
   return app;
@@ -16,10 +13,11 @@ async function getApp() {
 /**
  * Explicit Vercel Function entrypoint.
  *
- * Keep this module dependency-free at evaluation time. Heavy application,
- * MCP, provider and database modules are loaded only inside the handler so
- * Vercel runtime/import failures can be returned as useful JSON instead of
- * FUNCTION_INVOCATION_FAILED.
+ * All application source is imported through relative paths so Vercel traces
+ * and bundles the monorepo code into this function instead of leaving @vac/*
+ * workspace packages as runtime imports under /var/task/node_modules.
+ * Database construction remains lazy so configuration errors are returned as
+ * JSON instead of crashing during module evaluation.
  */
 export default async function handler(req: any, res: any) {
   try {
@@ -44,8 +42,7 @@ export default async function handler(req: any, res: any) {
     const query = params.toString();
     req.url = query ? `${path}?${query}` : path;
 
-    const expressApp = await getApp();
-    return expressApp(req, res);
+    return getApp()(req, res);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const stack = error instanceof Error ? error.stack?.split('\n').slice(0, 6).join('\n') : undefined;
