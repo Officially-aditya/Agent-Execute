@@ -12,24 +12,32 @@
 
 .streamed-message{animation:messageIn .18s ease-out both}
 .streamed-message .message-body{position:relative}
-.message-rich{max-width:680px;color:#ececf0;font-size:14px;line-height:1.68}
+.message-rich{max-width:680px;color:#ececf0;font-size:14px;line-height:1.68;overflow-wrap:anywhere}
 .message-rich p{margin:0 0 12px}
 .message-rich p:last-child{margin-bottom:0}
-.message-rich h3{margin:4px 0 10px;font-size:14px;line-height:1.4;font-weight:600;color:#f5f5f7}
+.message-rich h1,.message-rich h2,.message-rich h3,.message-rich h4{margin:18px 0 8px;color:#f5f5f7;line-height:1.35;font-weight:600}
+.message-rich h1{font-size:20px}
+.message-rich h2{font-size:17px}
+.message-rich h3{font-size:15px}
+.message-rich h4{font-size:14px}
 .message-rich strong{font-weight:600;color:#fafafa}
 .message-rich em{color:#c6c6ce}
-.message-rich code{padding:2px 5px;border:1px solid rgba(255,255,255,.08);border-radius:5px;background:rgba(255,255,255,.05);color:#d8d8df;font:10px/1.4 var(--mono)}
-.message-list{display:flex;flex-direction:column;gap:7px;margin:8px 0 16px;padding:0;list-style:none}
-.message-list li{position:relative;padding-left:17px;color:#d7d7dd}
-.message-list li:before{content:"";position:absolute;left:2px;top:.72em;width:4px;height:4px;border-radius:50%;background:#898994;box-shadow:0 0 0 3px rgba(255,255,255,.025)}
-.message-item{display:flex;align-items:baseline;justify-content:space-between;gap:24px;padding:7px 0 7px 17px!important;border-bottom:1px solid rgba(255,255,255,.045)}
-.message-item:last-child{border-bottom:0}
-.message-item-price{flex:0 0 auto;color:#b8b8c1;font:11px var(--mono)}
-.message-summary-row{display:flex;align-items:center;justify-content:space-between;gap:24px;max-width:460px;padding:8px 0;border-top:1px solid rgba(255,255,255,.055);color:#9797a2;font-size:11px}
-.message-summary-row strong{color:#dcdce3;font:500 11px var(--mono);text-align:right}
-.message-summary-row.total{margin-top:2px;padding-top:11px;color:#c8c8cf}
-.message-summary-row.total strong{color:#f5f5f7;font-size:14px;font-weight:600}
-.message-note{display:inline-flex!important;margin-top:8px!important;padding:7px 9px;border:1px solid rgba(52,211,153,.12);border-radius:8px;background:rgba(52,211,153,.045);color:#a8c8bc!important;font-size:11px;line-height:1.5}
+.message-rich a{color:#c9c2ff;text-decoration-color:rgba(201,194,255,.4);text-underline-offset:3px}
+.message-rich a:hover{color:#e2ddff;text-decoration-color:currentColor}
+.message-rich code{padding:2px 5px;border:1px solid rgba(255,255,255,.08);border-radius:5px;background:rgba(255,255,255,.05);color:#d8d8df;font:11px/1.45 var(--mono)}
+.message-rich pre{max-width:100%;margin:12px 0 16px;padding:13px 14px;overflow:auto;border:1px solid rgba(255,255,255,.075);border-radius:10px;background:rgba(4,4,8,.55)}
+.message-rich pre code{padding:0;border:0;background:transparent;color:#dddde5;font:11px/1.6 var(--mono);white-space:pre}
+.message-rich ul,.message-rich ol{display:flex;flex-direction:column;gap:5px;margin:7px 0 14px;padding-left:22px;color:#d7d7dd}
+.message-rich li::marker{color:#858590}
+.message-rich li>p{margin:0}
+.message-rich blockquote{margin:12px 0 16px;padding:8px 12px;border-left:2px solid rgba(168,151,255,.55);background:rgba(168,151,255,.04);color:#bdbdc6}
+.message-rich blockquote p:last-child{margin-bottom:0}
+.message-rich hr{height:1px;margin:16px 0;border:0;background:rgba(255,255,255,.08)}
+.message-rich table{display:block;max-width:100%;margin:10px 0 16px;overflow-x:auto;border-collapse:collapse;font-size:12px}
+.message-rich th,.message-rich td{padding:8px 10px;border:1px solid rgba(255,255,255,.075);text-align:left;vertical-align:top}
+.message-rich th{background:rgba(255,255,255,.045);color:#f0f0f4;font-weight:600}
+.message-rich td{color:#ceced6}
+.message-rich input[type="checkbox"]{margin-right:6px;accent-color:#9b8cff}
 .stream-caret{display:inline-block;width:6px;height:15px;margin-left:2px;vertical-align:-2px;border-radius:2px;background:rgba(255,255,255,.58);animation:caretBlink .8s steps(1,end) infinite}
 
 @keyframes streamPulse{0%,100%{opacity:.48}50%{opacity:1}}
@@ -38,6 +46,7 @@
 
 @media(max-width:640px){
   .message-rich{font-size:13px}
-  .message-item{gap:12px}
-  .message-summary-row{max-width:100%}
+  .message-rich h1{font-size:18px}
+  .message-rich h2{font-size:16px}
+  .message-rich table{font-size:11px}
 }
