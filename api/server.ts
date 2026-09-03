@@ -1,11 +1,13 @@
-import 'dotenv/config';
-import { NeonMerchantRepository } from '@vac/merchant-core/neon';
-import { createAgentApp } from '../apps/agent-service/src/app.js';
+let app: any = null;
 
-let app: ReturnType<typeof createAgentApp> | null = null;
-
-function getApp() {
+async function getApp() {
   if (app) return app;
+
+  const [{ NeonMerchantRepository }, { createAgentApp }] = await Promise.all([
+    import('@vac/merchant-core/neon'),
+    import('../apps/agent-service/src/app.js'),
+  ]);
+
   const repo = new NeonMerchantRepository();
   app = createAgentApp(repo);
   return app;
@@ -14,15 +16,12 @@ function getApp() {
 /**
  * Explicit Vercel Function entrypoint.
  *
- * Vercel rewrites the public /health and /api/* paths here while preserving
- * the original path in __path. Rehydrate req.url before passing the request
- * to Express so the exact same application routes are used in production.
- *
- * The application is initialized lazily so a missing/invalid deployment
- * environment variable is returned as JSON instead of crashing the function
- * during module evaluation and leaving the browser with an opaque HTTP 500.
+ * Keep this module dependency-free at evaluation time. Heavy application,
+ * MCP, provider and database modules are loaded only inside the handler so
+ * Vercel runtime/import failures can be returned as useful JSON instead of
+ * FUNCTION_INVOCATION_FAILED.
  */
-export default function handler(req: any, res: any) {
+export default async function handler(req: any, res: any) {
   try {
     const rawPath = req.query?.__path;
     const path = Array.isArray(rawPath) ? rawPath[0] : rawPath;
@@ -44,14 +43,33 @@ export default function handler(req: any, res: any) {
 
     const query = params.toString();
     req.url = query ? `${path}?${query}` : path;
-    return getApp()(req, res);
+
+    const expressApp = await getApp();
+    return expressApp(req, res);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error('Agent Execute Vercel startup failed:', error);
+    const stack = error instanceof Error ? error.stack?.split('\n').slice(0, 6).join('\n') : undefined;
+    console.error('Agent Execute Vercel invocation failed:', error);
     res.status(500).json({
       error: 'server_startup_failed',
       message,
-      hint: 'Check DATABASE_URL/NEON_DATABASE_URL and server-side deployment environment variables.',
+      stack,
+      diagnostics: {
+        database_configured: Boolean(
+          process.env.NEON_DATABASE_URL?.startsWith('postgres') ||
+          process.env.DATABASE_URL?.startsWith('postgres') ||
+          process.env.POSTGRES_URL?.startsWith('postgres')
+        ),
+        llm_configured: Boolean(process.env.LLM_API_KEY),
+        llm_model: process.env.LLM_MODEL || null,
+        llm_base_url_configured: Boolean(process.env.LLM_BASE_URL),
+        razorpay_test_configured: Boolean(
+          process.env.RAZORPAY_KEY_ID?.startsWith('rzp_test_') && process.env.RAZORPAY_KEY_SECRET
+        ),
+        merchant_signing_keys_configured: Boolean(
+          process.env.MERCHANT_SIGNING_PRIVATE_KEY && process.env.MERCHANT_SIGNING_PUBLIC_KEY
+        ),
+      },
     });
   }
 }
