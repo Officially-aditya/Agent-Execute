@@ -114,7 +114,7 @@ function removeWorkingMessage() {
 function ensureAssistantMessage() {
   if (liveAssistant?.row?.isConnected) return liveAssistant;
   const root = messagesRoot();
-  if (!root) return null;
+  if (!root) throw new Error('Chat message container is unavailable.');
   const row = document.createElement('div');
   row.className = 'message assistant streamed-message streaming';
   row.innerHTML = '<div class="message-body"><div class="message-label">Agent Execute</div><div class="message-rich"></div><span class="stream-caret" aria-hidden="true"></span></div>';
@@ -125,7 +125,7 @@ function ensureAssistantMessage() {
 }
 
 function renderAssistantBuffer() {
-  if (!liveAssistant?.rich) return;
+  if (!liveAssistant?.rich) throw new Error('Assistant stream renderer is unavailable.');
   liveAssistant.rich.innerHTML = renderMarkdown(liveAssistant.buffer);
   hardenLinks(liveAssistant.rich);
   scrollChat();
@@ -134,7 +134,6 @@ function renderAssistantBuffer() {
 function appendAssistantDelta(delta) {
   if (typeof delta !== 'string' || !delta) return;
   const message = ensureAssistantMessage();
-  if (!message) return;
   message.buffer += delta;
   renderAssistantBuffer();
 }
@@ -149,7 +148,6 @@ function finalizeAssistant(finalText) {
   const current = liveAssistant?.buffer || '';
   if (!text && !current) throw new Error('Agent completed without any assistant text.');
   const message = ensureAssistantMessage();
-  if (!message) return;
   if (text && text !== message.buffer) {
     message.buffer = text;
     renderAssistantBuffer();
@@ -275,15 +273,17 @@ async function consumeAgentStream(response) {
     finalizeAssistant(result.message || liveAssistant?.buffer || '');
   } catch (error) {
     removeWorkingMessage();
-    return jsonResponse({ error: 'empty_agent_response', message: error.message || String(error) }, 502);
+    return jsonResponse({ error: 'stream_render_failed', message: error instanceof Error ? error.message : String(error) }, 502);
   }
   removeWorkingMessage();
   return jsonResponse({ ...result, message: '' }, 200);
 }
 
-window.fetch = async function agentStreamingFetch(input, init = {}) {
+window.agentStreamFetch = async function agentStreamFetch(input, init = {}) {
   const info = requestInfo(input, init);
-  if (!info) return networkFetch(input, init);
+  if (!info) {
+    return jsonResponse({ error: 'stream_route_not_supported', message: 'Unsupported agent stream request.' }, 400);
+  }
 
   pendingTools.length = 0;
   discardIntermediateAssistant();
@@ -296,9 +296,6 @@ window.fetch = async function agentStreamingFetch(input, init = {}) {
 
   let response;
   try {
-    // Call the streaming function directly. This deliberately avoids relying
-    // on a rewrite for the live transport; rewrites remain only for external
-    // compatibility with the original API routes.
     response = await networkFetch(info.directUrl, { ...init, method: 'POST', headers });
   } catch (error) {
     return jsonResponse({ error: 'stream_request_failed', message: error instanceof Error ? error.message : String(error) }, 502);
