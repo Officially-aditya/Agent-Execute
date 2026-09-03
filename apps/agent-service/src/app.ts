@@ -1,9 +1,9 @@
 import express from 'express';
 import { resolve } from 'node:path';
 import { runAgent } from './agent.js';
-import { approveQuoteAsync, loadOrCreateMerchantKeys, verifyQuoteSignature } from '@vac/quote-integrity';
-import { RazorpayAdapter } from '@vac/razorpay';
-import { DomainError } from '@vac/shared';
+import { approveQuoteAsync, loadOrCreateMerchantKeys, verifyQuoteSignature } from '../../../packages/quote-integrity/src/index.js';
+import { RazorpayAdapter } from '../../../packages/razorpay/src/index.js';
+import { DomainError } from '../../../packages/shared/src/index.js';
 
 export function createAgentApp(repo: any) {
   const app = express();
