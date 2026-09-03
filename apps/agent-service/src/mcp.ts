@@ -1,22 +1,29 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { NeonMerchantRepository, hasNeonDatabase } from '../../../packages/merchant-core/src/neon.js';
 import { createMerchantMcpServer } from '../../merchant-mcp/src/server.js';
+
+const requestRepo = new AsyncLocalStorage<any>();
+
+export function runWithMerchantMcpRepo<T>(repo: any, fn: () => T): T {
+  return requestRepo.run(repo, fn);
+}
 
 export async function connectMerchantMcp(sharedRepo?: any) {
   const client = new Client({ name: 'verified-agent-checkout-host', version: '0.4.0' });
   const useInMemory = Boolean(process.env.VERCEL) || hasNeonDatabase() || process.env.MCP_TRANSPORT === 'inmemory';
 
   if (useInMemory) {
-    if (!sharedRepo && !hasNeonDatabase()) {
+    const contextualRepo = sharedRepo || requestRepo.getStore();
+    if (!contextualRepo && !hasNeonDatabase()) {
       throw new Error('Vercel/in-memory MCP requires Neon PostgreSQL. Set DATABASE_URL to the Neon connection string.');
     }
 
-    // On Vercel the Express app and MCP server must share the same request-scoped
-    // Neon repository. Opening a second Pool for every agent run doubles DB
-    // connections and makes serverless lifecycle failures much more likely.
-    const ownsRepo = !sharedRepo;
-    const repo = sharedRepo || new NeonMerchantRepository();
+    // Reuse the request-scoped repository when available. AsyncLocalStorage
+    // keeps this safe even if a warm Vercel instance handles concurrent calls.
+    const ownsRepo = !contextualRepo;
+    const repo = contextualRepo || new NeonMerchantRepository();
     const server = createMerchantMcpServer(repo);
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
