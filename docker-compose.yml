@@ -1,0 +1,24 @@
+services:
+  agent:
+    build: .
+    command: npm run dev:agent
+    env_file: .env
+    environment:
+      DATABASE_URL: /data/agent-execute.sqlite
+    ports:
+      - "3001:3001"
+    volumes:
+      - agent_execute_data:/data
+  merchant-admin:
+    build: .
+    command: npm run dev:admin
+    env_file: .env
+    environment:
+      DATABASE_URL: /data/agent-execute.sqlite
+      WEB_ORIGIN: http://localhost:3001
+    ports:
+      - "3002:3002"
+    volumes:
+      - agent_execute_data:/data
+volumes:
+  agent_execute_data:
