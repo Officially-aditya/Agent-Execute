@@ -6,6 +6,14 @@
       "destination": "/api/health"
     },
     {
+      "source": "/api/agent/run",
+      "destination": "/api/agent-stream?__path=/api/agent/run"
+    },
+    {
+      "source": "/api/sessions/:sessionId/continue",
+      "destination": "/api/agent-stream?__path=/api/sessions/:sessionId/continue"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/server?__path=/api/:path*"
     }
