@@ -2,6 +2,7 @@ import { neonConfig } from '@neondatabase/serverless';
 import WebSocket from 'ws';
 import { NeonMerchantRepository } from '../packages/merchant-core/src/neon.js';
 import { createAgentApp } from '../apps/agent-service/src/app.js';
+import { runWithMerchantMcpRepo } from '../apps/agent-service/src/mcp.js';
 
 // Make Neon Pool/Client transport explicit instead of relying on runtime-global
 // WebSocket support. This keeps the Vercel function stable across Node runtimes.
@@ -58,7 +59,7 @@ export default async function handler(req: any, res: any) {
     repo = new NeonMerchantRepository();
     const app = createAgentApp(repo);
     const responseDone = waitForResponse(res);
-    app(req, res);
+    runWithMerchantMcpRepo(repo, () => app(req, res));
     await responseDone;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
