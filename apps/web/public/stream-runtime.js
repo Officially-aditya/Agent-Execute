@@ -27,6 +27,7 @@ const doneLabels = {
 };
 
 let pendingRows = [];
+let liveAssistant = null;
 
 function isAgentRequest(input, init = {}) {
   const method = String(init.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
@@ -35,6 +36,87 @@ function isAgentRequest(input, init = {}) {
   if (!raw) return false;
   const path = new URL(raw, window.location.href).pathname;
   return path === '/api/agent/run' || /^\/api\/sessions\/[^/]+\/continue$/.test(path);
+}
+
+function scrollChat(behavior = 'smooth') {
+  requestAnimationFrame(() => window.scrollTo({
+    top: document.documentElement.scrollHeight,
+    behavior,
+  }));
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[character]);
+}
+
+function inlineMarkdown(value) {
+  return escapeHtml(value)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+}
+
+function renderMarkdown(value) {
+  const lines = String(value || '').replace(/\r/g, '').split('\n');
+  let html = '';
+  let listOpen = false;
+
+  const closeList = () => {
+    if (!listOpen) return;
+    html += '</ul>';
+    listOpen = false;
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      closeList();
+      continue;
+    }
+
+    const bullet = line.match(/^[-*]\s+(.+)$/);
+    if (bullet) {
+      if (!listOpen) {
+        html += '<ul class="message-list">';
+        listOpen = true;
+      }
+      const item = bullet[1].match(/^\*\*(.+?)\*\*\s*\((₹[^)]+)\)$/);
+      if (item) {
+        html += `<li class="message-item"><span><strong>${escapeHtml(item[1])}</strong></span><span class="message-item-price">${escapeHtml(item[2])}</span></li>`;
+      } else {
+        html += `<li>${inlineMarkdown(bullet[1])}</li>`;
+      }
+      continue;
+    }
+
+    closeList();
+
+    const summary = line.match(/^\*\*([^*]+):\*\*\s*(.+)$/);
+    if (summary) {
+      const label = summary[1].trim();
+      const total = label.toLowerCase() === 'total';
+      html += `<div class="message-summary-row${total ? ' total' : ''}"><span>${escapeHtml(label)}</span><strong>${inlineMarkdown(summary[2])}</strong></div>`;
+      continue;
+    }
+
+    const heading = line.match(/^#{1,3}\s+(.+)$/);
+    if (heading) {
+      html += `<h3>${inlineMarkdown(heading[1])}</h3>`;
+      continue;
+    }
+
+    const noteClass = /budget|under your|remaining/i.test(line) ? ' class="message-note"' : '';
+    html += `<p${noteClass}>${inlineMarkdown(line)}</p>`;
+  }
+
+  closeList();
+  return html;
 }
 
 function workingBody() {
@@ -55,6 +137,66 @@ function ensureStreamGroup() {
   return group;
 }
 
+function ensureAssistantMessage() {
+  if (liveAssistant?.row?.isConnected) return liveAssistant;
+  const root = document.getElementById('messages');
+  if (!root) return null;
+
+  const row = document.createElement('div');
+  row.className = 'message assistant streamed-message streaming';
+  row.innerHTML = '<div class="message-body"><div class="message-label">Agent Execute</div><div class="message-rich"></div><span class="stream-caret" aria-hidden="true"></span></div>';
+  root.appendChild(row);
+  liveAssistant = {
+    row,
+    rich: row.querySelector('.message-rich'),
+    buffer: '',
+  };
+  scrollChat();
+  return liveAssistant;
+}
+
+function updateAssistantMessage(text) {
+  const message = ensureAssistantMessage();
+  if (!message) return;
+  message.buffer = text;
+  message.rich.innerHTML = renderMarkdown(text);
+  scrollChat('auto');
+}
+
+function appendAssistantDelta(delta) {
+  if (typeof delta !== 'string' || !delta) return;
+  const message = ensureAssistantMessage();
+  if (!message) return;
+  message.buffer += delta;
+  message.rich.innerHTML = renderMarkdown(message.buffer);
+  scrollChat('auto');
+}
+
+function discardIntermediateAssistant() {
+  if (!liveAssistant?.row?.isConnected) {
+    liveAssistant = null;
+    return;
+  }
+  // Tool-calling turns should not remain as chat messages. If a provider emits
+  // prose before a tool call anyway, keep it transient and replace it with the
+  // eventual final assistant response.
+  liveAssistant.row.remove();
+  liveAssistant = null;
+}
+
+function finalizeAssistant(text) {
+  if (!text) {
+    discardIntermediateAssistant();
+    return;
+  }
+  updateAssistantMessage(text);
+  if (!liveAssistant) return;
+  liveAssistant.row.classList.remove('streaming');
+  liveAssistant.row.querySelector('.stream-caret')?.remove();
+  liveAssistant = null;
+  scrollChat();
+}
+
 function trimRows(group) {
   while (group.children.length > 6) group.firstElementChild?.remove();
   pendingRows = pendingRows.filter((entry) => entry.row.isConnected);
@@ -69,12 +211,12 @@ function toolFailed(result) {
   );
 }
 
-function streamEvent(event) {
-  if (!event || (event.type !== 'tool_call' && event.type !== 'tool_result')) return;
+function streamToolEvent(event) {
   const group = ensureStreamGroup();
   if (!group) return;
 
   if (event.type === 'tool_call') {
+    discardIntermediateAssistant();
     const row = document.createElement('div');
     row.className = 'stream-activity-row pending';
     row.dataset.tool = event.tool || '';
@@ -101,13 +243,41 @@ function streamEvent(event) {
     trimRows(group);
   }
 
-  requestAnimationFrame(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' }));
+  scrollChat();
+}
+
+function streamEvent(event) {
+  if (!event) return;
+  if (event.type === 'model_delta') {
+    appendAssistantDelta(event.text || '');
+    return;
+  }
+  if (event.type === 'tool_call' || event.type === 'tool_result') {
+    streamToolEvent(event);
+  }
+}
+
+function clearTransientActivity() {
+  pendingRows = [];
+  document.querySelectorAll('.stream-activity, .activity-group, .working-message').forEach((element) => element.remove());
 }
 
 function removeLegacyActivity(node) {
   if (!(node instanceof Element)) return;
   if (node.matches('.activity-group')) node.remove();
   node.querySelectorAll?.('.activity-group').forEach((element) => element.remove());
+}
+
+// app.js still contains the old post-hoc renderInlineActivity() path. Block
+// those completed groups at the chat root, while leaving Judge Mode's raw
+// event renderer untouched.
+const messagesRoot = document.getElementById('messages');
+if (messagesRoot) {
+  const nativeAppendChild = messagesRoot.appendChild.bind(messagesRoot);
+  messagesRoot.appendChild = function appendChatNode(node) {
+    if (node instanceof Element && node.matches('.activity-group')) return node;
+    return nativeAppendChild(node);
+  };
 }
 
 const activityObserver = new MutationObserver((mutations) => {
@@ -147,14 +317,23 @@ async function consumeNdjson(response) {
   }
   if (buffer.trim()) consumeLine(buffer);
 
-  pendingRows = [];
   if (error) {
+    discardIntermediateAssistant();
+    clearTransientActivity();
     return new Response(JSON.stringify(error), {
       status: 500,
       headers: { 'content-type': 'application/json' },
     });
   }
-  return new Response(JSON.stringify(result || {}), {
+
+  finalizeAssistant(result?.message || liveAssistant?.buffer || '');
+  clearTransientActivity();
+
+  // The streamed bubble is now the canonical user-facing assistant message.
+  // Return an empty message so app.js does not append a duplicate plaintext
+  // bubble. Keep the complete event list for Judge Mode and guard rendering.
+  const bridgedResult = { ...(result || {}), message: '' };
+  return new Response(JSON.stringify(bridgedResult), {
     status: 200,
     headers: { 'content-type': 'application/json' },
   });
@@ -164,6 +343,9 @@ window.fetch = async function streamingAgentFetch(input, init = {}) {
   if (!isAgentRequest(input, init)) return baseFetch(input, init);
 
   pendingRows = [];
+  discardIntermediateAssistant();
+  clearTransientActivity();
+
   const headers = new Headers(init.headers || (input instanceof Request ? input.headers : undefined));
   headers.set('accept', 'application/x-ndjson');
   const response = await baseFetch(input, { ...init, headers });
