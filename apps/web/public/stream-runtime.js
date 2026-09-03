@@ -29,6 +29,13 @@ const doneLabels = {
 let pendingRows = [];
 let liveAssistant = null;
 
+if (window.marked?.setOptions) {
+  window.marked.setOptions({
+    gfm: true,
+    breaks: true,
+  });
+}
+
 function isAgentRequest(input, init = {}) {
   const method = String(init.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
   if (method !== 'POST') return false;
@@ -55,68 +62,28 @@ function escapeHtml(value) {
   })[character]);
 }
 
-function inlineMarkdown(value) {
-  return escapeHtml(value)
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
-}
-
 function renderMarkdown(value) {
-  const lines = String(value || '').replace(/\r/g, '').split('\n');
-  let html = '';
-  let listOpen = false;
-
-  const closeList = () => {
-    if (!listOpen) return;
-    html += '</ul>';
-    listOpen = false;
-  };
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) {
-      closeList();
-      continue;
-    }
-
-    const bullet = line.match(/^[-*]\s+(.+)$/);
-    if (bullet) {
-      if (!listOpen) {
-        html += '<ul class="message-list">';
-        listOpen = true;
-      }
-      const item = bullet[1].match(/^\*\*(.+?)\*\*\s*\((₹[^)]+)\)$/);
-      if (item) {
-        html += `<li class="message-item"><span><strong>${escapeHtml(item[1])}</strong></span><span class="message-item-price">${escapeHtml(item[2])}</span></li>`;
-      } else {
-        html += `<li>${inlineMarkdown(bullet[1])}</li>`;
-      }
-      continue;
-    }
-
-    closeList();
-
-    const summary = line.match(/^\*\*([^*]+):\*\*\s*(.+)$/);
-    if (summary) {
-      const label = summary[1].trim();
-      const total = label.toLowerCase() === 'total';
-      html += `<div class="message-summary-row${total ? ' total' : ''}"><span>${escapeHtml(label)}</span><strong>${inlineMarkdown(summary[2])}</strong></div>`;
-      continue;
-    }
-
-    const heading = line.match(/^#{1,3}\s+(.+)$/);
-    if (heading) {
-      html += `<h3>${inlineMarkdown(heading[1])}</h3>`;
-      continue;
-    }
-
-    const noteClass = /budget|under your|remaining/i.test(line) ? ' class="message-note"' : '';
-    html += `<p${noteClass}>${inlineMarkdown(line)}</p>`;
+  const source = String(value || '');
+  if (!window.marked?.parse || !window.DOMPurify?.sanitize) {
+    return `<p>${escapeHtml(source).replace(/\n/g, '<br>')}</p>`;
   }
 
-  closeList();
-  return html;
+  const dirty = window.marked.parse(source, {
+    gfm: true,
+    breaks: true,
+  });
+
+  return window.DOMPurify.sanitize(dirty, {
+    USE_PROFILES: { html: true },
+    ALLOW_DATA_ATTR: false,
+  });
+}
+
+function hardenRenderedLinks(root) {
+  root?.querySelectorAll?.('a[href]').forEach((anchor) => {
+    anchor.target = '_blank';
+    anchor.rel = 'noopener noreferrer';
+  });
 }
 
 function workingBody() {
@@ -160,6 +127,7 @@ function updateAssistantMessage(text) {
   if (!message) return;
   message.buffer = text;
   message.rich.innerHTML = renderMarkdown(text);
+  hardenRenderedLinks(message.rich);
   scrollChat('auto');
 }
 
@@ -169,6 +137,7 @@ function appendAssistantDelta(delta) {
   if (!message) return;
   message.buffer += delta;
   message.rich.innerHTML = renderMarkdown(message.buffer);
+  hardenRenderedLinks(message.rich);
   scrollChat('auto');
 }
 
