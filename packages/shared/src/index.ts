@@ -86,7 +86,7 @@ export type AgentTaskState = {
 };
 
 export type AgentEvent = {
-  type: 'model' | 'tool_call' | 'tool_result' | 'state';
+  type: 'model' | 'model_delta' | 'tool_call' | 'tool_result' | 'state';
   at: string;
   text?: string;
   tool?: string;
