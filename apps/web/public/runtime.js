@@ -5,10 +5,31 @@ document.head.appendChild(overrideStyles);
 
 const nativeFetch = window.fetch.bind(window);
 
-window.fetch = (input, init) => {
-  if (typeof input === 'string' && input.startsWith('http://localhost:3002')) {
-    const suffix = input.slice('http://localhost:3002'.length);
-    return nativeFetch(`/api/admin${suffix}`, init);
+async function observableFetch(input, init) {
+  let target = input;
+  if (typeof target === 'string' && target.startsWith('http://localhost:3002')) {
+    const suffix = target.slice('http://localhost:3002'.length);
+    target = `/api/admin${suffix}`;
   }
-  return nativeFetch(input, init);
-};
+
+  const response = await nativeFetch(target, init);
+  if (response.ok) return response;
+
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) return response;
+
+  const text = await response.clone().text().catch(() => '');
+  const message = text.trim().replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 500)
+    || `HTTP ${response.status}`;
+
+  return new Response(JSON.stringify({
+    error: `HTTP_${response.status}`,
+    message,
+  }), {
+    status: response.status,
+    statusText: response.statusText,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+window.fetch = observableFetch;
