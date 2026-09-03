@@ -1,15 +1,16 @@
 {
   "name": "agent-execute",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "dev": "concurrently -k -n agent,admin \"npm run dev:agent\" \"npm run dev:admin\"",
+    "dev": "npm run dev:agent",
     "dev:agent": "tsx apps/agent-service/src/index.ts",
     "dev:mcp": "tsx apps/merchant-mcp/src/index.ts",
     "dev:admin": "tsx apps/merchant-admin/src/index.ts",
     "start": "tsx apps/agent-service/src/index.ts",
+    "vercel-build": "npm run typecheck && rm -rf public && cp -R apps/web/public public",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:security": "vitest run tests/security",
@@ -24,6 +25,7 @@
   "dependencies": {
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
+    "@neondatabase/serverless": "^1.1.0",
     "better-sqlite3": "^12.4.1",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
