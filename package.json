@@ -1,6 +1,6 @@
 {
   "name": "agent-execute",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "workspaces": ["apps/*", "packages/*"],
@@ -14,6 +14,9 @@
     "test:unit": "vitest run tests/unit",
     "test:security": "vitest run tests/security",
     "test:integration": "vitest run tests/integration",
+    "test:mcp": "vitest run tests/mcp",
+    "test:live:llm": "RUN_LIVE_LLM=1 vitest run tests/live/agent.live.test.ts",
+    "test:live:razorpay": "RUN_LIVE_RAZORPAY=1 vitest run tests/live/razorpay-order.live.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check": "npm run typecheck && npm test",
     "setup": "tsx packages/quote-integrity/src/setup-keys.ts"
