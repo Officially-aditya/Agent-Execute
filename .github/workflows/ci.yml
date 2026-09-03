@@ -14,10 +14,11 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck
       - run: npm run check:vercel-api
-      - run: node --check apps/web/public/app.js && node --check apps/web/public/runtime.js && node --check apps/web/public/stream-runtime.js
+      - run: node --check apps/web/public/app.js && node --check apps/web/public/runtime.js && node --check apps/web/public/chat-stream.js
       - run: npm test
       - run: npm run vercel-build
-      - run: test -f public/index.html && test -f public/app.js && test -f public/runtime.js && test -f public/stream-runtime.js && test -f public/stream-ui.css && test -f public/agent-execute-bg.webp
+      - run: test -f public/index.html && test -f public/app.js && test -f public/runtime.js && test -f public/chat-stream.js && test -f public/stream-ui.css && test -f public/agent-execute-bg.webp
+      - run: node -e "const fs=require('fs'); const html=fs.readFileSync('public/index.html','utf8'); if(!html.includes('/chat-stream.js') || html.includes('/stream-runtime.js') || html.includes('/stream-compat.js')) process.exit(1)"
       - run: node -e "JSON.parse(require('fs').readFileSync('vercel.json','utf8'))"
       - run: cp .env.example .env && docker compose config
       - run: docker build -t agent-execute-ci .
