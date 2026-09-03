@@ -1,9 +1,9 @@
 import { createHash, createPublicKey, generateKeyPairSync, randomUUID, sign, verify } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import type { Approval, CartSnapshot, ExecutionGrant, Quote } from '@vac/shared';
-import { DomainError, nowIso } from '@vac/shared';
-import type { MerchantRepository } from '@vac/merchant-core';
+import type { Approval, CartSnapshot, ExecutionGrant, Quote } from '../../shared/src/index.js';
+import { DomainError, nowIso } from '../../shared/src/index.js';
+import type { MerchantRepository } from '../../merchant-core/src/index.js';
 
 type MaybePromise<T> = T | Promise<T>;
 export type AsyncQuoteRepository = {
