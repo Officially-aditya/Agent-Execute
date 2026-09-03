@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import { randomUUID } from 'node:crypto';
 import { connectMerchantMcp, mcpText } from './mcp.js';
-import { nowIso, type AgentEvent, type AgentObjective, type AgentTaskState } from '@vac/shared';
+import { nowIso, type AgentEvent, type AgentObjective, type AgentTaskState } from '../../../packages/shared/src/index.js';
 
 type MaybePromise<T> = T | Promise<T>;
 type AgentRepository = {
