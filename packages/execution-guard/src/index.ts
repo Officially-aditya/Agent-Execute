@@ -1,6 +1,6 @@
-import { nowIso, DomainError, ERROR_CODES, type ErrorCode, type Approval, type CartSnapshot, type ExecutionGrant, type Quote } from '@vac/shared';
-import { digestCart, loadOrCreateMerchantKeys, verifyQuoteSignature } from '@vac/quote-integrity';
-import type { PaymentRail, CreatedOrder } from '@vac/razorpay';
+import { nowIso, DomainError, ERROR_CODES, type ErrorCode, type Approval, type CartSnapshot, type ExecutionGrant, type Quote } from '../../shared/src/index.js';
+import { digestCart, loadOrCreateMerchantKeys, verifyQuoteSignature } from '../../quote-integrity/src/index.js';
+import type { PaymentRail, CreatedOrder } from '../../razorpay/src/index.js';
 
 type MaybePromise<T> = T | Promise<T>;
 type ExecutionRecord = { state: string; orderId?: string | null; result?: any } | null;
