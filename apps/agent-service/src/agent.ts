@@ -1,8 +1,14 @@
 import OpenAI from 'openai';
 import { randomUUID } from 'node:crypto';
 import { connectMerchantMcp, mcpText } from './mcp.js';
-import { MerchantRepository } from '@vac/merchant-core';
 import { nowIso, type AgentEvent, type AgentObjective, type AgentTaskState } from '@vac/shared';
+
+type MaybePromise<T> = T | Promise<T>;
+type AgentRepository = {
+  getSession(id: string): MaybePromise<{ state: AgentTaskState; messages: any[] } | null>;
+  createSession(state: AgentTaskState, messages: unknown[]): MaybePromise<unknown>;
+  saveSession(state: AgentTaskState, messages: unknown[]): MaybePromise<unknown>;
+};
 
 const SYSTEM = `You are a shopping agent operating a live merchant exclusively through the MCP tools you are given.
 Respect the trusted task state, especially required items, quantities, preferences, and maximum budget. All money is integer paise.
@@ -66,9 +72,9 @@ async function extractObjective(openai: OpenAI, request: string): Promise<AgentO
     return {
       originalRequest: request,
       currency: 'INR',
-      requiredItems: Array.isArray(parsed.required_items) ? parsed.required_items.filter((x: unknown) => typeof x === 'string' && x.trim().length > 0) : fallback.requiredItems,
+      requiredItems: Array.isArray(parsed.required_items) ? parsed.required_items.filter((value: unknown) => typeof value === 'string' && value.trim().length > 0) : fallback.requiredItems,
       maximumAmount: Number.isInteger(parsed.maximum_amount) && parsed.maximum_amount >= 0 ? parsed.maximum_amount : fallback.maximumAmount,
-      preferences: Array.isArray(parsed.preferences) ? parsed.preferences.filter((x: unknown) => typeof x === 'string' && x.trim().length > 0) : fallback.preferences,
+      preferences: Array.isArray(parsed.preferences) ? parsed.preferences.filter((value: unknown) => typeof value === 'string' && value.trim().length > 0) : fallback.preferences,
     };
   } catch {
     return fallback;
@@ -96,13 +102,14 @@ function updateStateFromTool(state: AgentTaskState, tool: string, result: any) {
   state.updatedAt = nowIso();
 }
 
-export async function runAgent(input: { repo: MerchantRepository; message?: string; sessionId?: string; trustedInstruction?: string; }) {
+export async function runAgent(input: { repo: AgentRepository; message?: string; sessionId?: string; trustedInstruction?: string }) {
   const openai = client();
-  const { client: mcp } = await connectMerchantMcp();
+  const mcpConnection = await connectMerchantMcp();
+  const mcp = mcpConnection.client;
   try {
     const discovered = await mcp.listTools();
-    const tools = discovered.tools.map((t: any) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.inputSchema } }));
-    let session = input.sessionId ? input.repo.getSession(input.sessionId) : null;
+    const tools = discovered.tools.map((tool: any) => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.inputSchema } }));
+    let session = input.sessionId ? await input.repo.getSession(input.sessionId) : null;
     if (!session) {
       if (!input.message?.trim()) throw new Error('A new session requires a user message');
       const now = nowIso();
@@ -110,26 +117,35 @@ export async function runAgent(input: { repo: MerchantRepository; message?: stri
       const objective = await extractObjective(openai, input.message);
       const state: AgentTaskState = { sessionId, objective, phase: 'SHOPPING', createdAt: now, updatedAt: now };
       session = { state, messages: [{ role: 'system', content: SYSTEM }] };
-      input.repo.createSession(state, session.messages);
+      await input.repo.createSession(state, session.messages);
     }
+
     const { state, messages } = session;
     messages.push({ role: 'system', content: trustedStateMessage(state) });
     if (input.trustedInstruction) messages.push({ role: 'system', content: `TRUSTED HOST EVENT: ${input.trustedInstruction}` });
     if (input.message?.trim()) messages.push({ role: 'user', content: input.message.trim() });
     const events: AgentEvent[] = [{ type: 'state', at: nowIso(), state: structuredClone(state) }];
+
     for (let step = 0; step < 24; step++) {
-      const completion: any = await openai.chat.completions.create({ model: process.env.LLM_MODEL || 'gpt-5.5', messages, tools, tool_choice: 'auto' } as any);
+      const completion: any = await openai.chat.completions.create({
+        model: process.env.LLM_MODEL || 'gpt-5.5',
+        messages,
+        tools,
+        tool_choice: 'auto',
+      } as any);
       const assistant = completion.choices?.[0]?.message;
       if (!assistant) throw new Error('LLM returned no message');
       messages.push(assistant);
       const calls = assistant.tool_calls || [];
+
       if (!calls.length) {
         const text = assistant.content || '';
         if (text) events.push({ type: 'model', at: nowIso(), text });
         state.updatedAt = nowIso();
-        input.repo.saveSession(state, messages);
+        await input.repo.saveSession(state, messages);
         return { session_id: state.sessionId, message: text, state, events };
       }
+
       if (assistant.content) events.push({ type: 'model', at: nowIso(), text: assistant.content });
       for (const call of calls) {
         const toolName = call.function.name;
@@ -148,20 +164,22 @@ export async function runAgent(input: { repo: MerchantRepository; message?: stri
         updateStateFromTool(state, toolName, parsed);
         events.push({ type: 'state', at: nowIso(), state: structuredClone(state) });
         messages.push({ role: 'tool', tool_call_id: call.id, content: text });
+
         if (toolName === 'commit_quote' && !parsed?.error) {
           const textOut = `I have a fresh merchant-committed quote for ₹${(parsed.amount / 100).toFixed(2)}. Please approve that exact quote before payment execution.`;
           messages.push({ role: 'assistant', content: textOut });
           events.push({ type: 'model', at: nowIso(), text: textOut });
           state.updatedAt = nowIso();
-          input.repo.saveSession(state, messages);
+          await input.repo.saveSession(state, messages);
           return { session_id: state.sessionId, message: textOut, state, events };
         }
       }
+
       state.updatedAt = nowIso();
-      input.repo.saveSession(state, messages);
+      await input.repo.saveSession(state, messages);
     }
     throw new Error('Agent exceeded maximum tool steps');
   } finally {
-    await mcp.close();
+    await mcpConnection.close();
   }
 }
