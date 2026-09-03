@@ -1,6 +1,6 @@
 import Razorpay from 'razorpay';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { DomainError } from '@vac/shared';
+import { DomainError } from '../../shared/src/index.js';
 export type CreateVerifiedOrderInput={amount:number;currency:'INR';quoteId:string;grantId:string;cartDigest:string;merchantId:string};
 export type CreatedOrder={id:string;amount:number;currency:string;status?:string};
 export interface PaymentRail{createOrder(input:CreateVerifiedOrderInput):Promise<CreatedOrder>}
