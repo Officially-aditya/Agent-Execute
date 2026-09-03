@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#09090b" />
+  <title>Agent Execute</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+</head>
+<body>
+  <div class="background" aria-hidden="true"></div>
+
+  <section id="homeView" class="home-view">
+    <header class="home-nav">
+      <a class="brand" href="/" aria-label="Agent Execute home"><span class="brand-mark">AE</span><span>Agent Execute</span></a>
+      <div class="home-status"><span id="healthDot" class="health-dot"></span><span id="healthText">Checking services…</span></div>
+    </header>
+
+    <main class="home-main">
+      <div class="home-copy">
+        <div class="home-kicker"><span></span> Verified agent checkout</div>
+        <h1>What do you want<br />the agent to buy?</h1>
+        <p>Give it the outcome. It can search, compare and recover through live merchant tools. You still approve the exact amount before payment.</p>
+      </div>
+
+      <form id="homeForm" class="hero-composer" autocomplete="off">
+        <div class="hero-input-wrap">
+          <textarea id="homeInput" rows="1" aria-label="Shopping request" placeholder=""></textarea>
+          <span id="animatedPlaceholder" class="animated-placeholder">Buy milk, eggs and cereal under ₹500</span>
+          <button id="homeSend" class="hero-send" type="submit" aria-label="Run request"><span>↑</span></button>
+        </div>
+        <div class="hero-meta"><span><i></i> Live merchant MCP</span><span>Razorpay test mode</span></div>
+      </form>
+
+      <div class="suggestions" aria-label="Example requests">
+        <button data-prompt="Buy milk, eggs and cereal under ₹500.">Milk, eggs and cereal · ₹500</button>
+        <button data-prompt="Get bread, eggs and coffee for less than ₹450.">Breakfast · under ₹450</button>
+        <button data-prompt="Buy rice and butter. Prefer the cheaper options.">Rice + butter · cheapest</button>
+      </div>
+    </main>
+  </section>
+
+  <section id="chatView" class="chat-view" hidden>
+    <header class="chat-header">
+      <button id="brandHome" class="chat-brand" type="button"><span class="brand-mark small">AE</span><span>Agent Execute</span></button>
+      <div class="chat-header-center"><span id="phaseBadge" class="phase-badge">READY</span><span id="sessionBadge" class="session-badge">No active session</span></div>
+      <div class="chat-header-actions"><button id="judgeButton" class="header-button" type="button">Judge mode</button><button id="newSession" class="header-button icon-button" type="button" aria-label="New chat">＋</button></div>
+    </header>
+
+    <main class="chat-main"><div id="messages" class="messages" aria-live="polite"></div><div class="chat-spacer"></div></main>
+
+    <div class="composer-dock">
+      <form id="chatForm" class="chat-composer" autocomplete="off">
+        <textarea id="chatInput" rows="1" placeholder="Ask Agent Execute" aria-label="Message Agent Execute"></textarea>
+        <div class="composer-bottom"><div class="composer-left"><span class="plus">＋</span><span class="composer-state"><i></i> live tools</span></div><button id="sendButton" class="send-button" type="submit" aria-label="Send message">↑</button></div>
+      </form>
+      <p class="composer-footnote">The agent can choose what to buy. It cannot choose what Razorpay charges.</p>
+    </div>
+  </section>
+
+  <div id="drawerBackdrop" class="drawer-backdrop" hidden></div>
+  <aside id="judgeDrawer" class="judge-drawer" aria-label="Judge mode" aria-hidden="true">
+    <div class="drawer-header"><div><span class="drawer-kicker">Judge mode</span><h2>Inspect the real boundary</h2><p>Raw tool calls, audit events, and the same merchant state the agent sees.</p></div><button id="closeJudge" class="drawer-close" type="button" aria-label="Close judge mode">×</button></div>
+    <div class="drawer-tabs" role="tablist"><button class="tab active" data-tab="activity">Agent / MCP</button><button class="tab" data-tab="audit">Audit</button><button class="tab" data-tab="merchant">Merchant</button></div>
+    <div id="activity" class="tab-content active"><div class="drawer-toolbar"><span>Tool-visible actions only</span></div><div id="events" class="events"><div class="drawer-empty">Run a request to inspect tool calls.</div></div></div>
+    <div id="audit" class="tab-content"><div class="drawer-toolbar"><span>Append-only system events</span><button id="refreshAudit" type="button">Refresh</button></div><div id="auditEvents" class="events"></div></div>
+    <div id="merchant" class="tab-content">
+      <div class="merchant-intro"><div><b>Change the merchant, not the demo.</b><p>Mutations affect the same state exposed through MCP.</p></div><button id="resetMerchant" class="danger-button" type="button">Reset</button></div>
+      <div id=".merchant-settings" class="merchant-settings">
+        <label><span>Discount</span><div><span>₹</span><input id="discountInput" type="number" min="0" step="1"/><button data-setting="discount" type="button">Apply</button></div></label>
+        <label><span>Delivery</span><div><span>₹</span><input id="deliveryInput" type="number" min="0" step="1"/><button data-setting="delivery" type="button">Apply</button></div></label>
+      </div>
+      <div id="products" class="product-grid"></div>
+    </div>
+  </aside>
+
+  <div id="toast" class="toast" hidden></div>
+  <script type="module" src="/runtime.js"></script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
