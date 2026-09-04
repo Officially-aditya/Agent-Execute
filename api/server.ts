@@ -36,7 +36,9 @@ export default async function handler(req: any, res: any) {
   let repo: NeonMerchantRepository | null = null;
   try {
     const rawPath = req.query?.__path;
-    const path = Array.isArray(rawPath) ? rawPath[0] : rawPath;
+    const path = Array.isArray(rawPath)
+      ? (rawPath.find((p: string) => typeof p === 'string' && p !== '/api/agent-stream') || rawPath[0])
+      : rawPath;
 
     if (typeof path !== 'string' || !path.startsWith('/')) {
       res.status(400).json({ error: 'invalid_proxy_path' });

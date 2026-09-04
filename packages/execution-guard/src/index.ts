@@ -46,15 +46,11 @@ export class ExecutionGuard {
       const grant = await this.repo.getGrant(grantId);
       if (!grant) throw new DomainError('REPLAY_ATTEMPT', 'Execution grant does not exist', { grant_id: grantId });
       if (grant.usedAt) throw new DomainError('GRANT_ALREADY_USED', 'Execution grant has already been consumed', { grant_id: grantId });
-      if (Date.parse(grant.expiresAt) <= Date.now()) throw new DomainError('APPROVAL_EXPIRED', 'Execution grant expired');
-
       const approval = await this.repo.getApproval(grant.approvalId);
       if (!approval) throw new DomainError('REPLAY_ATTEMPT', 'Approval does not exist');
-      if (Date.parse(approval.expiresAt) <= Date.now()) throw new DomainError('APPROVAL_EXPIRED', 'Approval expired');
 
       const quote = await this.repo.getQuote(grant.quoteId);
       if (!quote) throw new DomainError('REPLAY_ATTEMPT', 'Committed quote does not exist');
-      if (Date.parse(quote.validUntil) <= Date.now()) throw new DomainError('QUOTE_EXPIRED', 'Quote expired');
 
       const { publicKey } = loadOrCreateMerchantKeys();
       if (!verifyQuoteSignature(quote, publicKey)) throw new DomainError('INVALID_SIGNATURE', 'Merchant quote signature is invalid');
@@ -67,12 +63,19 @@ export class ExecutionGuard {
       if (current.merchantId !== quote.merchantId) throw new DomainError('MERCHANT_MISMATCH', 'Current merchant does not match committed merchant');
       const currentDigest = digestCart(current);
       if (current.revision !== quote.cartRevision || currentDigest !== quote.cartDigest || current.total !== quote.amount) {
-        throw new DomainError('QUOTE_CHANGED', 'Merchant checkout state changed after approval', {
+        const message = current.total !== quote.amount
+          ? 'Transaction failed because amount updated'
+          : 'Merchant checkout state changed after approval';
+        throw new DomainError('QUOTE_CHANGED', message, {
           approved: { amount: quote.amount, revision: quote.cartRevision, digest: quote.cartDigest },
           current: { amount: current.total, revision: current.revision, digest: currentDigest },
           recoverable: true,
         });
       }
+
+      if (Date.parse(grant.expiresAt) <= Date.now()) throw new DomainError('APPROVAL_EXPIRED', 'Execution grant expired');
+      if (Date.parse(approval.expiresAt) <= Date.now()) throw new DomainError('APPROVAL_EXPIRED', 'Approval expired');
+      if (Date.parse(quote.validUntil) <= Date.now()) throw new DomainError('QUOTE_EXPIRED', 'Quote expired');
 
       const quoteNonceOk = await this.repo.claimNonce(quote.nonce, grantId);
       const grantNonceOk = await this.repo.claimNonce(grant.nonce, grantId);

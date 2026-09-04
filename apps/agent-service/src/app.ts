@@ -32,6 +32,7 @@ async function respondWithAgent(req: express.Request, res: express.Response, inp
   };
 
   try {
+    write({ type: 'ready', phase: 'runtime_ready' });
     const result = await runAgent({
       ...input,
       onEvent: (event) => write({ type: 'event', event }),
@@ -62,6 +63,46 @@ export function createAgentApp(repo: any) {
     } catch (error) {
       res.status(503).json({ ok: false, error: 'database_unavailable', message: error instanceof Error ? error.message : String(error) });
     }
+  });
+
+  app.all('/api/agent-stream', async (req, res) => {
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'method_not_allowed' });
+    }
+
+    const rawPath = req.query?.__path;
+    const targetPath = Array.isArray(rawPath)
+      ? (rawPath.find((p) => typeof p === 'string' && p !== '/api/agent-stream') || rawPath[0])
+      : rawPath;
+
+    if (targetPath === '/api/agent/run') {
+      try {
+        const { message, session_id } = req.body || {};
+        if (typeof message !== 'string' || !message.trim()) return res.status(400).json({ error: 'message_required' });
+        await respondWithAgent(req, res, { repo, message, sessionId: typeof session_id === 'string' ? session_id : undefined });
+      } catch (error) {
+        if (!res.headersSent) res.status(500).json(agentErrorPayload(error));
+      }
+      return;
+    }
+
+    const sessionMatch = typeof targetPath === 'string' ? targetPath.match(/^\/api\/sessions\/([^/]+)\/continue$/) : null;
+    if (sessionMatch?.[1]) {
+      try {
+        const sessionId = decodeURIComponent(sessionMatch[1]);
+        const session = await repo.getSession(sessionId);
+        if (!session) return res.status(404).json({ error: 'session_not_found' });
+        const instruction = session.state.activeGrantId
+          ? `The user approved quote ${session.state.activeQuoteId}. The trusted execution grant is ${session.state.activeGrantId}. Continue the task using normal MCP tools.`
+          : 'Continue the shopping task from the trusted persisted state.';
+        await respondWithAgent(req, res, { repo, sessionId, trustedInstruction: instruction });
+      } catch (error) {
+        if (!res.headersSent) res.status(500).json(agentErrorPayload(error));
+      }
+      return;
+    }
+
+    res.status(404).json({ error: 'stream_route_not_found', message: `Unsupported stream route: ${targetPath || '(empty)'}` });
   });
 
   app.post('/api/agent/run', async (req, res) => {
@@ -112,6 +153,24 @@ export function createAgentApp(repo: any) {
       res.json({ ...result, state: session.state });
     } catch (error) {
       res.status(400).json(error instanceof DomainError ? error.toJSON() : { error: 'approval_failed', message: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  app.post('/api/quotes/:quoteId/cancel', async (req, res) => {
+    try {
+      const { session_id } = req.body || {};
+      if (typeof session_id !== 'string') return res.status(400).json({ error: 'session_id_required' });
+      const session = await repo.getSession(session_id);
+      if (!session) return res.status(404).json({ error: 'session_not_found' });
+      if (session.state.activeQuoteId === req.params.quoteId) {
+        session.state.activeQuoteId = undefined;
+        session.state.phase = 'SHOPPING';
+        await repo.saveSession(session.state, session.messages);
+        await repo.appendAudit('QUOTE_CANCELLED', { quoteId: req.params.quoteId, sessionId: session_id });
+      }
+      res.json({ ok: true, state: session.state });
+    } catch (error) {
+      res.status(400).json({ error: 'cancel_failed', message: error instanceof Error ? error.message : String(error) });
     }
   });
 

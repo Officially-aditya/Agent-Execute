@@ -17,10 +17,10 @@ const SYSTEM = `You are a shopping agent operating a live merchant exclusively t
 Respect the trusted task state, especially required items, quantities, preferences, and maximum budget. All money is integer paise.
 Never claim a product exists without searching the merchant. Never fabricate IDs.
 The payment amount is outside your authority: you cannot set, override, or infer an amount for Razorpay. execute_payment accepts only a trusted server-issued grant_id.
-When a shopping cart satisfies the user's request, call commit_quote instead of stopping at an informal cart summary. After commit_quote succeeds, STOP and tell the user the committed total needs approval. Do not simulate or call approval.
-When trusted state contains an activeGrantId, you may call execute_payment with exactly that grant ID.
-If execute_payment returns QUOTE_CHANGED or STALE_CART, recover dynamically through MCP: inspect the live cart/catalog, choose a valid alternative only within the user's constraints, obtain a fresh quote, then STOP for fresh approval.
-If a quote or approval has expired, refresh authoritative cart state, obtain a fresh quote, then STOP for fresh user approval. Never reuse expired authorization.
+Before calling commit_quote, verify via view_cart that the final cart total (including delivery, discounts, and taxes) does NOT exceed the user's maximum budget (maximumAmount). Never commit a quote or present a cart for approval if the total exceeds the user's maximum budget. When a shopping cart satisfies the user's request and is within budget, call commit_quote instead of stopping at an informal cart summary. After commit_quote succeeds within budget, STOP and tell the user the committed total needs approval. Do not simulate or call approval. If the cart total exceeds the user's budget, do not present it for approval; explain that the total exceeds their threshold and ask how they wish to proceed.
+When trusted state contains an activeGrantId, you may call execute_payment with exactly that grant ID. When execute_payment succeeds with ORDER_CREATED, explain to the user that quote integrity verification passed, a trusted Razorpay Order has been generated with the exact approved amount locked in, and invite them to complete payment using the Razorpay Checkout button below.
+When the cart value changes or execute_payment returns QUOTE_CHANGED or STALE_CART: do NOT say that the execution expired or that authorization expired. You must explicitly state to the user: "Transaction failed because amount updated". Then recover dynamically through MCP: inspect the live cart/catalog, choose a valid alternative only within the user's constraints, obtain a fresh quote, then STOP for fresh approval.
+If a quote or approval has expired without any cart value or price change, refresh authoritative cart state, obtain a fresh quote, then STOP for fresh user approval. Never reuse expired authorization. Under no circumstances say that execution or authorization expired when the cart amount or value has updated.
 If execute_payment returns GRANT_ALREADY_USED, call get_payment_status before deciding anything else. Never create a second payment attempt merely because the tool was retried.
 If a payment-rail operation returns PAYMENT_FAILED with retry_allowed=true, retry only through the existing trusted payment primitive and never modify payment fields or amount.
 If you receive INVALID_SIGNATURE, AMOUNT_MISMATCH, CURRENCY_MISMATCH, MERCHANT_MISMATCH, REPLAY_ATTEMPT, GRANT_ALREADY_USED, PAYMENT_VERIFICATION_FAILED, or another integrity/security failure, STOP and report it. Never attempt to bypass, weaken, or work around a security check.
@@ -96,15 +96,32 @@ function updateStateFromTool(state: AgentTaskState, tool: string, result: any) {
   if (['add_to_cart', 'remove_from_cart', 'update_quantity', 'view_cart'].includes(tool) && typeof result?.cartId === 'string') state.cartId = result.cartId;
   if (tool === 'commit_quote' && typeof result?.quoteId === 'string') {
     state.cartId = result.cartId;
-    state.activeQuoteId = result.quoteId;
-    state.activeGrantId = undefined;
-    state.phase = 'AWAITING_APPROVAL';
+    if (state.objective.maximumAmount !== undefined && typeof result?.amount === 'number' && result.amount > state.objective.maximumAmount) {
+      state.activeQuoteId = undefined;
+      state.activeGrantId = undefined;
+      state.phase = 'SHOPPING';
+    } else {
+      state.activeQuoteId = result.quoteId;
+      state.activeGrantId = undefined;
+      state.phase = 'AWAITING_APPROVAL';
+    }
   }
   if (tool === 'execute_payment' && result?.status === 'ORDER_CREATED') {
     state.lastPaymentOrderId = result.order?.id;
     state.phase = 'PAYMENT_READY';
   }
   state.updatedAt = nowIso();
+}
+
+function normalizeMessagesForCompletion(messages: any[]): any[] {
+  const normalized = [...messages];
+  const last = normalized[normalized.length - 1];
+  if (!last || last.role === 'assistant') {
+    normalized.push({ role: 'user', content: 'Continue the shopping task from the trusted persisted state.' });
+  } else if (last.role === 'system' && normalized.length > 1) {
+    normalized[normalized.length - 1] = { ...last, role: 'user' };
+  }
+  return normalized;
 }
 
 export async function runAgent(input: {
@@ -142,14 +159,17 @@ export async function runAgent(input: {
 
     const { state, messages } = session;
     messages.push({ role: 'system', content: trustedStateMessage(state) });
-    if (input.trustedInstruction) messages.push({ role: 'system', content: `TRUSTED HOST EVENT: ${input.trustedInstruction}` });
+    if (input.trustedInstruction) {
+      const role = input.message?.trim() ? 'system' : 'user';
+      messages.push({ role, content: `TRUSTED HOST EVENT: ${input.trustedInstruction}` });
+    }
     if (input.message?.trim()) messages.push({ role: 'user', content: input.message.trim() });
     await emit({ type: 'state', at: nowIso(), state: structuredClone(state) });
 
     for (let step = 0; step < 24; step++) {
       const request = {
         model: process.env.LLM_MODEL || 'gpt-5.5',
-        messages,
+        messages: normalizeMessagesForCompletion(messages),
         tools,
         tool_choice: 'auto',
       };
@@ -194,8 +214,15 @@ export async function runAgent(input: {
         try { parsed = JSON.parse(text); } catch {}
         await emit({ type: 'tool_result', at: nowIso(), tool: toolName, result: parsed });
         updateStateFromTool(state, toolName, parsed);
-        await emit({ type: 'state', at: nowIso(), state: structuredClone(state) });
-        messages.push({ role: 'tool', tool_call_id: call.id, content: text });
+        let toolMessageContent = text;
+        if (toolName === 'commit_quote' && state.objective.maximumAmount !== undefined && typeof parsed?.amount === 'number' && parsed.amount > state.objective.maximumAmount) {
+          toolMessageContent = JSON.stringify({
+            ...parsed,
+            error: 'OVER_BUDGET',
+            message: `Committed quote total of ₹${(parsed.amount/100).toFixed(2)} exceeds the user's budget threshold of ₹${(state.objective.maximumAmount/100).toFixed(2)}. The cart cannot be approved. Do not ask the user to approve this cart. Explain to the user that the cart total exceeds their budget threshold and ask them how they wish to proceed.`,
+          });
+        }
+        messages.push({ role: 'tool', tool_call_id: call.id, content: toolMessageContent });
       }
 
       state.updatedAt = nowIso();

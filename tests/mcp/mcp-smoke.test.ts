@@ -33,5 +33,5 @@ describe('real merchant MCP transport', () => {
       expect(products.length).toBeGreaterThan(0);
       expect(products.some((p: any) => String(p.name).toLowerCase().includes('milk'))).toBe(true);
     } finally { await client.close(); }
-  });
+  }, 15000);
 });

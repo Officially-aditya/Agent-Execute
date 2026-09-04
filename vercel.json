@@ -19,6 +19,10 @@
       "destination": "/api/agent-stream?__path=/api/sessions/:sessionId/continue"
     },
     {
+      "source": "/api/agent-stream",
+      "destination": "/api/agent-stream"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/server?__path=/api/:path*"
     }

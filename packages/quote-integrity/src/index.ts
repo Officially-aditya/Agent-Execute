@@ -42,17 +42,38 @@ const keyDir = () => resolve(process.cwd(), process.env.MERCHANT_KEY_DIR || '.da
 const privatePath = () => resolve(keyDir(), 'merchant-private.pem');
 const publicPath = () => resolve(keyDir(), 'merchant-public.pem');
 
+function normalizePem(key: string, label: 'PRIVATE KEY' | 'PUBLIC KEY'): string {
+  const base64 = key
+    .replace(/\\n/g, '')
+    .replace(new RegExp(`-----BEGIN ${label}-----`, 'g'), '')
+    .replace(new RegExp(`-----END ${label}-----`, 'g'), '')
+    .replace(/\s+/g, '');
+  return `-----BEGIN ${label}-----\n${base64}\n-----END ${label}-----\n`;
+}
+
 export function loadOrCreateMerchantKeys(): MerchantKeys {
-  const envPrivate = process.env.MERCHANT_SIGNING_PRIVATE_KEY?.replace(/\\n/g, '\n');
-  const envPublic = process.env.MERCHANT_SIGNING_PUBLIC_KEY?.replace(/\\n/g, '\n');
-  if (envPrivate && envPublic) return { privateKey: envPrivate, publicKey: envPublic };
+  const rawPrivate = process.env.MERCHANT_SIGNING_PRIVATE_KEY;
+  const rawPublic = process.env.MERCHANT_SIGNING_PUBLIC_KEY;
+  if (rawPrivate && rawPublic) {
+    return {
+      privateKey: normalizePem(rawPrivate, 'PRIVATE KEY'),
+      publicKey: normalizePem(rawPublic, 'PUBLIC KEY'),
+    };
+  }
+  if (rawPrivate && !rawPublic) {
+    const privateKey = normalizePem(rawPrivate, 'PRIVATE KEY');
+    return {
+      privateKey,
+      publicKey: createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }).toString(),
+    };
+  }
   if (process.env.VERCEL) {
     throw new Error('MERCHANT_SIGNING_PRIVATE_KEY and MERCHANT_SIGNING_PUBLIC_KEY are required on Vercel. Generate them once with npm run setup and add both as Vercel environment variables.');
   }
 
   const derivePublic = (privateKey: string) => createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }).toString();
   const readWinner = (): MerchantKeys => {
-    const privateKey = readFileSync(privatePath(), 'utf8');
+    const privateKey = normalizePem(readFileSync(privatePath(), 'utf8'), 'PRIVATE KEY');
     const publicKey = derivePublic(privateKey);
     if (!existsSync(publicPath()) || readFileSync(publicPath(), 'utf8') !== publicKey) {
       writeFileSync(publicPath(), publicKey, { mode: 0o644 });
