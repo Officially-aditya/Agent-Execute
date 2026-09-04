@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Agent Execute — Brand Logo Preview</title>
+  <title>Agent Execute — Minimal Brand Logo</title>
   <style>
     :root {
       --bg: #09090b;
@@ -31,6 +31,8 @@
       margin: 0 0 40px;
       color: #a1a1aa;
       font-size: 14px;
+      text-align: center;
+      max-width: 600px;
     }
     .grid {
       display: grid;
@@ -49,11 +51,6 @@
       align-items: center;
       box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
     }
-    .card.light {
-      background: #fbfbfb;
-      color: #111;
-      border-color: #e5e5e5;
-    }
     .card h2 {
       margin: 20px 0 6px;
       font-size: 16px;
@@ -71,6 +68,7 @@
       justify-content: center;
       border-radius: 16px;
       overflow: hidden;
+      background: #000;
     }
     .logo-box img, .logo-box svg {
       width: 100%;
@@ -89,41 +87,52 @@
       font-size: 14px;
       font-weight: 600;
     }
-    .nav-demo img {
-      width: 26px;
-      height: 26px;
-      border-radius: 6px;
+    .brand-mark-preview {
+      display: grid;
+      place-items: center;
+      width: 31px;
+      height: 31px;
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      border-radius: 9px;
+      background: rgba(10, 10, 18, 0.28);
+      backdrop-filter: blur(12px);
+    }
+    .brand-mark-preview img {
+      width: 18px;
+      height: 18px;
     }
   </style>
 </head>
 <body>
-  <h1>Agent Execute — Final Brand Logo</h1>
-  <p>Minimalist, electric chevron 'A' representing autonomous AI execution and cryptographic integrity.</p>
+  <h1>Agent Execute — Final Minimal Logo</h1>
+  <p>The Execution Delta: An upright equilateral apex (Agent) enclosing an execution play chevron in negative space. Stark, mathematical, 100% solid flat monochrome with zero gradients.</p>
 
   <div class="grid">
     <div class="card">
       <div class="logo-box">
-        <img src="./logo.png" alt="Agent Execute AI Logo" />
+        <img src="./logo.png" alt="Agent Execute Master Raster" />
       </div>
       <h2>Raster Master (PNG)</h2>
-      <span>1024 × 1024 high-resolution master asset</span>
+      <span>1024 × 1024 solid flat monochrome asset</span>
     </div>
 
     <div class="card">
-      <div class="logo-box">
+      <div class="logo-box" style="padding: 24px; box-sizing: border-box;">
         <img src="./logo.svg" alt="Agent Execute Vector SVG Logo" />
       </div>
       <h2>Vector Master (SVG)</h2>
-      <span>Infinitely scalable, crisp vector icon with glow</span>
+      <span>Infinitely scalable Euclidean geometry with even-odd cutout</span>
     </div>
 
     <div class="card">
-      <div class="logo-box" style="background: #0f1015; padding: 20px;">
-        <img src="./logo.svg" alt="App Icon Scale" style="width: 80px; height: 80px;" />
+      <div class="logo-box" style="background: #09090c; padding: 20px;">
+        <img src="./logo.svg" alt="App Icon Scale" style="width: 72px; height: 72px;" />
       </div>
-      <h2>App Icon / Favicon Scale</h2>
+      <h2>App Icon / Navigation Scale</h2>
       <div class="nav-demo">
-        <img src="./logo.svg" alt="Nav Brand" />
+        <div class="brand-mark-preview">
+          <img src="./logo.svg" alt="" />
+        </div>
         <span>Agent Execute</span>
       </div>
     </div>
