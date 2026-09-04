@@ -16,10 +16,10 @@ function enterHome(){ $('chatView').hidden=true; $('homeView').hidden=false; doc
 
 function addMessage(role,text){
   const wrap=document.createElement('div'); wrap.className=`message ${role}`;
-  wrap.innerHTML=`<div class="message-body">${role==='assistant'?'<div class="message-label">Agent Execute</div>':''}<p></p></div>`;
+  wrap.innerHTML=`<div class="message-body">${role==='assistant'?'<div class="message-label"><img src="/logo.svg" alt="" width="11" height="11" class="message-brand-icon" />Agent Execute</div>':''}<p></p></div>`;
   wrap.querySelector('p').textContent=text; $('messages').appendChild(wrap); scrollChat(); return wrap;
 }
-function showWorking(){ removeWorking(); const row=document.createElement('div'); row.className='message assistant working-message'; row.innerHTML='<div class="message-body"><div class="message-label">Agent Execute</div><p>Working<span class="working-dots">…</span></p></div>'; $('messages').appendChild(row); state.working=row; scrollChat(); }
+function showWorking(){ removeWorking(); const row=document.createElement('div'); row.className='message assistant working-message'; row.innerHTML='<div class="message-body"><div class="message-label"><img src="/logo.svg" alt="" width="11" height="11" class="message-brand-icon" />Agent Execute</div><p>Working<span class="working-dots">…</span></p></div>'; $('messages').appendChild(row); state.working=row; scrollChat(); }
 function removeWorking(){ if(state.working?.isConnected)state.working.remove(); state.working=null; }
 
 const toolLabels={

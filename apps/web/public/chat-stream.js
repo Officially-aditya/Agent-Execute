@@ -117,7 +117,7 @@ function ensureAssistantMessage() {
   if (!root) throw new Error('Chat message container is unavailable.');
   const row = document.createElement('div');
   row.className = 'message assistant streamed-message streaming';
-  row.innerHTML = '<div class="message-body"><div class="message-label">Agent Execute</div><div class="message-rich"></div><span class="stream-caret" aria-hidden="true"></span></div>';
+  row.innerHTML = '<div class="message-body"><div class="message-label"><img src="/logo.svg" alt="" width="11" height="11" class="message-brand-icon" />Agent Execute</div><div class="message-rich"></div><span class="stream-caret" aria-hidden="true"></span></div>';
   root.appendChild(row);
   liveAssistant = { row, rich: row.querySelector('.message-rich'), buffer: '' };
   scrollChat();

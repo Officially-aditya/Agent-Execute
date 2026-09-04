@@ -1,4 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" width="100%" height="100%">
-  <!-- Agent Execute — Minimal Execution Delta (Apex + Play Cutout) -->
-  <path fill-rule="evenodd" clip-rule="evenodd" d="M 256 64 L 468 432 L 44 432 Z M 214 237 L 339 309 L 214 381 Z" fill="#FFFFFF"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" width="100%" height="100%">
+  <!-- Agent Execute — Minimal Geometric Cut Delta Logo -->
+  <g transform="translate(0, 79)" fill="#FFFFFF">
+    <path d="M 511 99 L 629 285 L 380 683 L 327 615 L 93 766 Z"/>
+    <path d="M 707 411 L 931 767 L 386 767 L 531 534 Z"/>
+  </g>
 </svg>
