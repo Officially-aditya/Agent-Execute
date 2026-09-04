@@ -24,9 +24,9 @@
 - Docker/Compose startup path, persistent database/signing identity and GitHub Actions validation
 - unit, MCP, integration and security suites covering mutation, tampering, expiry, merchant/currency binding, nonce replay, concurrent execution and idempotency
 
-## Credential-gated live acceptance
+## Credential-gated release acceptance
 
-External secrets are intentionally not committed. The repository contains opt-in acceptance tests for the two external paths that public CI cannot execute without credentials:
+Public CI intentionally does not execute external credentialed calls. Before recording or judging, run the final acceptance paths with a developer/judge `.env`:
 
 ```bash
 npm run test:live:llm
@@ -35,4 +35,9 @@ npm run test:live:razorpay
 
 `test:live:llm` calls the configured API model and drives the real MCP server on a new arbitrary shopping request. `test:live:razorpay` creates a real Razorpay Test Order through `cart → quote → approval → grant → Execution Guard → Razorpay` and asserts that Razorpay receives the verified quote amount.
 
-The remaining environment-dependent acceptance step is to run those commands with a developer/judge `.env`, then complete a Razorpay Test Checkout success/failure in the browser. No fake payment success path is used by the product.
+These are release-acceptance checks for already-implemented external paths, not mock substitutes. The browser flow uses the same payment boundary: Razorpay Test Checkout returns the order/payment/signature fields, and the server records success only after signature verification.
+
+For the strongest judge proof, complete at least one browser success flow and one merchant-state mutation flow before recording:
+
+1. arbitrary request → MCP cart → signed quote → explicit approval → real Razorpay Test Order → Test Checkout → verified payment;
+2. approved quote → merchant amount/state mutation → `QUOTE_CHANGED` before Razorpay → same LLM recovers through MCP → fresh approval.

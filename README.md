@@ -14,25 +14,24 @@ The merchant catalog is a hackathon test merchant; the agent loop, MCP calls, mu
 
 ## Architecture
 
-```text
-User
-  ↓
-Real LLM shopping agent
-  ↓ structured tool calls
-MCP client
-  ↓
-Merchant MCP server
-  ↓
-Persistent merchant/cart/security state
-  ↓
-Signed immutable quote (SHA-256 + Ed25519 + expiry + nonce)
-  ↓
-User approval → server execution grant
-  ↓
-Execution Guard (zero LLM calls)
-  ↓
-Razorpay Test Order → Test Checkout → server signature verification
+```mermaid
+flowchart LR
+    U[User] --> A[LLM shopping agent]
+    A -->|structured tool calls| C[MCP client]
+    C --> M[Merchant MCP server]
+    M --> S[Mutable merchant state]
+    S --> Q[Signed immutable quote<br/>SHA-256 + Ed25519 + expiry + nonce]
+    Q --> P[Explicit user approval]
+    P --> G[Server execution grant<br/>grant_id only]
+    G --> E[Execution Guard<br/>deterministic · zero LLM]
+    E -->|verified quote amount only| R[Razorpay Test Order]
+    R --> X[Razorpay Test Checkout]
+    X --> V[Server-side signature verification]
+
+    A -. no payment amount authority .-> E
 ```
+
+The authority split is deliberate: the LLM can decide **commerce actions**, but it cannot create approval, alter the signed quote, set a payment amount, or call Razorpay directly.
 
 `execute_payment` has exactly one authority-bearing input:
 
@@ -77,20 +76,21 @@ The transport changes for the deployment runtime, not the agent/tool boundary.
 
 ## Run locally
 
-Requirements: Node.js 20+ (22 recommended), an LLM API key, and Razorpay **Test Mode** credentials.
+Requirements: **Node.js 22.x**, an LLM API key, and Razorpay **Test Mode** credentials.
 
 ```bash
 git clone https://github.com/Officially-aditya/Agent-Execute.git
 cd Agent-Execute
 cp .env.example .env
-# fill LLM_API_KEY, LLM_MODEL/LLM_BASE_URL when needed,
-# RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET
+# fill LLM_API_KEY, RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET
 npm install
 npm run setup
 npm run dev
 ```
 
 Open `http://localhost:3001`.
+
+The default `.env.example` preconfigures the Google AI Studio model and OpenAI-compatible base URL with `gemini-3.8-flash`; supply your own LLM API key and Razorpay Test Mode credentials. If you use a different compatible provider/model, change `LLM_MODEL` and `LLM_BASE_URL` accordingly.
 
 By default local development uses SQLite. The agent/web service also exposes the Judge Mode merchant-admin routes, so a second service is not required for the normal development flow. The merchant MCP is spawned over real stdio MCP and is independently runnable with `npm run dev:mcp`.
 
@@ -128,11 +128,11 @@ The schema and test catalog are created/seeding idempotently when the Neon-backe
 
 ### 2. Add LLM and Razorpay variables
 
-For a Google AI Studio model through Google's OpenAI-compatible endpoint, for example:
+For Google AI Studio through Google's OpenAI-compatible endpoint:
 
 ```env
 LLM_API_KEY=...
-LLM_MODEL=...
+LLM_MODEL=gemini-3.8-flash
 LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
 
 RAZORPAY_KEY_ID=rzp_test_...
@@ -183,7 +183,9 @@ Judge Mode uses same-origin `/api/admin/*` routes in deployment, backed by the s
 9. Open Razorpay Test Checkout and complete success/failure testing.
 10. Inspect the full audit trail.
 
-There are no `/run-demo`, `scenarioId`, hardcoded product sequences, or forced recovery products.
+There are no `/run-demo`, `scenarioId`, hardcoded product sequences, or forced recovery products. The recorded Buildathon demo is one normal invocation of the same code path a judge can run with a different request.
+
+For the suggested 5-minute recording sequence, see [`docs/demo-script.md`](docs/demo-script.md). For a clone-and-test checklist, see [`docs/judge-guide.md`](docs/judge-guide.md).
 
 ## Security rules
 
