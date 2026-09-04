@@ -10,6 +10,7 @@
     "dev:mcp": "tsx apps/merchant-mcp/src/index.ts",
     "dev:admin": "tsx apps/merchant-admin/src/index.ts",
     "start": "tsx apps/agent-service/src/index.ts",
+    "build": "npm run vercel-build",
     "vercel-build": "npm run typecheck && npm run check:vercel-api && rm -rf public && cp -R apps/web/public public",
     "check:vercel-api": "node scripts/verify-vercel-api.mjs",
     "test": "vitest run",
