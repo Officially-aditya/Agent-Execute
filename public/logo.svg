@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" width="100%" height="100%">
+  <defs>
+    <linearGradient id="ae-grad" x1="256" y1="64" x2="256" y2="448" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#b066ff"/>
+      <stop offset="35%" stop-color="#8b5cf6"/>
+      <stop offset="65%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#34d399"/>
+    </linearGradient>
+    <filter id="ae-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#8b5cf6" flood-opacity="0.35"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#34d399" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Background container optional, transparent for versatile embedding -->
+  <g filter="url(#ae-glow)">
+    <!-- Main Left Leg of 'A' with circuit terminal -->
+    <path d="M 256 76 L 140 376 L 176 376 L 204 300 L 256 300 L 270 262 L 218 262 L 256 160 L 302 262 L 320 220 Z" 
+          fill="url(#ae-grad)" />
+
+    <!-- Lower left circuit trace & node -->
+    <path d="M 140 376 L 118 436 L 168 436 L 180 404 L 152 404" 
+          stroke="url(#ae-grad)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="168" cy="436" r="14" fill="#34d399" />
+
+    <!-- Central & Right Execution Lightning Bolt -->
+    <polygon points="334,188 244,324 308,324 236,448 344,284 286,284 348,188" 
+             fill="url(#ae-grad)" />
+
+    <!-- Right Base Terminal & Node structure -->
+    <path d="M 356 392 L 396 436 L 436 436 L 394 340 L 366 340" 
+          stroke="url(#ae-grad)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="356" cy="392" r="13" fill="#38bdf8" />
+    <circle cx="396" cy="436" r="13" fill="#34d399" />
+  </g>
+</svg>
