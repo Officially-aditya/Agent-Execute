@@ -42,33 +42,34 @@ const keyDir = () => resolve(process.cwd(), process.env.MERCHANT_KEY_DIR || '.da
 const privatePath = () => resolve(keyDir(), 'merchant-private.pem');
 const publicPath = () => resolve(keyDir(), 'merchant-public.pem');
 
-function normalizePem(key: string, label: 'PRIVATE KEY' | 'PUBLIC KEY'): string {
-  const base64 = key
-    .replace(/\\n/g, '')
-    .replace(new RegExp(`-----BEGIN ${label}-----`, 'g'), '')
-    .replace(new RegExp(`-----END ${label}-----`, 'g'), '')
-    .replace(/\s+/g, '');
-  return `-----BEGIN ${label}-----\n${base64}\n-----END ${label}-----\n`;
+export function normalizePem(raw: string, label: 'PRIVATE KEY' | 'PUBLIC KEY'): string {
+  if (!raw || typeof raw !== 'string') throw new Error(`Missing ${label}`);
+  let clean = raw.trim().replace(/^["'`]|["'`]$/g, '').trim();
+  clean = clean.replace(/\\r\\n|\\n|\\r/g, '\n');
+  clean = clean
+    .replace(/-----BEGIN [^-]+-----/g, '')
+    .replace(/-----END [^-]+-----/g, '');
+  const base64 = clean.replace(/[^A-Za-z0-9+/=]/g, '');
+  if (!base64.length) throw new Error(`Invalid empty ${label} after normalization`);
+  const chunks = base64.match(/.{1,64}/g)?.join('\n') || base64;
+  return `-----BEGIN ${label}-----\n${chunks}\n-----END ${label}-----\n`;
 }
+
+let cachedEphemeralKeys: MerchantKeys | null = null;
 
 export function loadOrCreateMerchantKeys(): MerchantKeys {
   const rawPrivate = process.env.MERCHANT_SIGNING_PRIVATE_KEY;
   const rawPublic = process.env.MERCHANT_SIGNING_PUBLIC_KEY;
-  if (rawPrivate && rawPublic) {
-    return {
-      privateKey: normalizePem(rawPrivate, 'PRIVATE KEY'),
-      publicKey: normalizePem(rawPublic, 'PUBLIC KEY'),
-    };
-  }
-  if (rawPrivate && !rawPublic) {
-    const privateKey = normalizePem(rawPrivate, 'PRIVATE KEY');
-    return {
-      privateKey,
-      publicKey: createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }).toString(),
-    };
-  }
-  if (process.env.VERCEL) {
-    throw new Error('MERCHANT_SIGNING_PRIVATE_KEY and MERCHANT_SIGNING_PUBLIC_KEY are required on Vercel. Generate them once with npm run setup and add both as Vercel environment variables.');
+  if (rawPrivate) {
+    try {
+      const privateKey = normalizePem(rawPrivate, 'PRIVATE KEY');
+      const publicKey = rawPublic
+        ? normalizePem(rawPublic, 'PUBLIC KEY')
+        : createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }).toString();
+      return { privateKey, publicKey };
+    } catch (err) {
+      console.error('Failed to parse MERCHANT_SIGNING_PRIVATE_KEY from environment:', err);
+    }
   }
 
   const derivePublic = (privateKey: string) => createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }).toString();
@@ -81,21 +82,27 @@ export function loadOrCreateMerchantKeys(): MerchantKeys {
     return { privateKey, publicKey };
   };
 
-  mkdirSync(dirname(privatePath()), { recursive: true });
-  if (existsSync(privatePath())) return readWinner();
-
-  const pair = generateKeyPairSync('ed25519', {
-    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-    publicKeyEncoding: { type: 'spki', format: 'pem' },
-  });
-
   try {
+    mkdirSync(dirname(privatePath()), { recursive: true });
+    if (existsSync(privatePath())) return readWinner();
+
+    const pair = generateKeyPairSync('ed25519', {
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+    });
     writeFileSync(privatePath(), pair.privateKey, { mode: 0o600, flag: 'wx' });
     writeFileSync(publicPath(), pair.publicKey, { mode: 0o644 });
     return { privateKey: pair.privateKey, publicKey: pair.publicKey };
   } catch (error: any) {
-    if (error?.code !== 'EEXIST') throw error;
-    return readWinner();
+    if (error?.code === 'EEXIST') return readWinner();
+    // In serverless environments where filesystem is read-only and env keys are missing:
+    if (!cachedEphemeralKeys) {
+      cachedEphemeralKeys = generateKeyPairSync('ed25519', {
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+      });
+    }
+    return cachedEphemeralKeys;
   }
 }
 
